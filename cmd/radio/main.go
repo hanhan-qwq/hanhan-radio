@@ -9,45 +9,50 @@ import (
 
 	"github.com/cloudwego/eino/callbacks"
 
-	"github.com/hanhan-qwq/hanhan-radio/internal/agent"
-	"github.com/hanhan-qwq/hanhan-radio/internal/logging"
-	radiomodel "github.com/hanhan-qwq/hanhan-radio/internal/model"
+	"github.com/hanhan-qwq/hanhan-radio/internal/callback"
+	"github.com/hanhan-qwq/hanhan-radio/internal/model"
+	"github.com/hanhan-qwq/hanhan-radio/internal/playlist"
+	"github.com/hanhan-qwq/hanhan-radio/internal/radio"
 	"github.com/hanhan-qwq/hanhan-radio/internal/session"
 )
 
 func main() {
 	_ = godotenv.Load()
-	callbacks.AppendGlobalHandlers(logging.BuildLogHandler())
+	callbacks.AppendGlobalHandlers(callback.Handler())
 
 	ctx := context.Background()
-	cm := radiomodel.NewArkModel()
+	cm := model.NewArkModel()
 
-	graph, err := agent.BuildGraph(ctx, cm)
+	songs, err := playlist.Load("data/playlist.txt")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 
-	store, err := session.NewStore("./data/sessions")
+	runner, err := radio.BuildRunner(ctx, radio.Config{
+		ChatModel: cm,
+		Songs:     songs,
+	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 
+	store, _ := session.NewStore("./data/sessions")
 	sess, _ := store.GetOrCreate("debug")
-	host := agent.NewRadioHost(graph, sess)
+	host := radio.NewHost(runner, sess)
 	defer host.Close()
 
-	fmt.Println("🎙️  憨憨电台 (Graph Pipeline)")
-	fmt.Println("   memory_load → react_dj → text_preprocess → tts → audio → memory_save")
+	fmt.Println("🎙️  憨憨电台")
+	fmt.Println("  DeepAgent (ReAct) → 流式输出")
 	fmt.Println()
 
-	events := host.Start()
-
-	for evt := range events {
+	for evt := range host.Start() {
 		switch evt.Type {
 		case "text":
 			fmt.Print(evt.Data)
+		case "tool":
+			fmt.Printf("\n  [tool] %s\n", evt.Data)
 		case "done":
 			fmt.Println()
 		case "error":

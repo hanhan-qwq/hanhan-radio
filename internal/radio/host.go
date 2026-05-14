@@ -1,12 +1,15 @@
-package agent
+package radio
 
 import (
 	"context"
 	"sync"
 	"time"
-	"github.com/cloudwego/eino/compose"
+
+	"github.com/cloudwego/eino/adk"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/hanhan-qwq/hanhan-radio/internal/playlist"
 	"github.com/hanhan-qwq/hanhan-radio/internal/session"
 )
 
@@ -29,10 +32,14 @@ func nextPrompt() string {
 	return s
 }
 
-// RadioHost runs the continuous radio loop using the graph pipeline.
-type RadioHost struct {
-	graph compose.Runnable[string, string]
-	sess  *session.Session
+type Event struct {
+	Type string
+	Data string
+}
+
+type Host struct {
+	runner *adk.Runner
+	sess   *session.Session
 
 	control chan string
 	mu      sync.Mutex
@@ -41,10 +48,10 @@ type RadioHost struct {
 	cancel  context.CancelFunc
 }
 
-func NewRadioHost(graph compose.Runnable[string, string], sess *session.Session) *RadioHost {
+func NewHost(runner *adk.Runner, sess *session.Session) *Host {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &RadioHost{
-		graph:   graph,
+	return &Host{
+		runner:  runner,
 		sess:    sess,
 		control: make(chan string, 8),
 		ctx:     ctx,
@@ -52,12 +59,12 @@ func NewRadioHost(graph compose.Runnable[string, string], sess *session.Session)
 	}
 }
 
-func (h *RadioHost) Send(text string)  { h.control <- "speak:" + text }
-func (h *RadioHost) Pause()             { h.control <- "pause" }
-func (h *RadioHost) Resume()            { h.control <- "resume" }
-func (h *RadioHost) Close()             { h.cancel() }
+func (h *Host) Send(text string)  { h.control <- "speak:" + text }
+func (h *Host) Pause()             { h.control <- "pause" }
+func (h *Host) Resume()            { h.control <- "resume" }
+func (h *Host) Close()             { h.cancel() }
 
-func (h *RadioHost) Start() <-chan Event {
+func (h *Host) Start() <-chan Event {
 	out := make(chan Event, 64)
 	h.sess.Append(schema.UserMessage("（电台开播了，打个招呼，然后推荐一首歌开始聊）"))
 
@@ -88,25 +95,63 @@ func (h *RadioHost) Start() <-chan Event {
 	return out
 }
 
-func (h *RadioHost) runSegment(out chan<- Event) {
-	msg := lastUserMessage(h.sess)
+func (h *Host) runSegment(out chan<- Event) {
+	events := h.runner.Run(h.ctx, h.sess.GetMessages())
+	var content string
 
-	result, err := h.graph.Invoke(h.ctx, msg)
-	if err != nil {
-		h.emit(out, "error", err.Error())
-		return
+	for {
+		event, ok := events.Next()
+		if !ok {
+			break
+		}
+		if event.Err != nil {
+			h.emit(out, "error", event.Err.Error())
+			return
+		}
+		if event.Output == nil || event.Output.MessageOutput == nil {
+			continue
+		}
+
+		mv := event.Output.MessageOutput
+
+		// show tool results for debug
+		if mv.Role == schema.Tool {
+			if mv.Message != nil {
+				h.emit(out, "tool", truncate(mv.Message.Content, 200))
+			}
+			continue
+		}
+
+		if mv.Role != schema.Assistant && mv.Role != "" {
+			continue
+		}
+
+		if mv.IsStreaming {
+			mv.MessageStream.SetAutomaticClose()
+			for {
+				frame, err := mv.MessageStream.Recv()
+				if err != nil {
+					break
+				}
+				if frame != nil && frame.Content != "" {
+					content += frame.Content
+					h.emit(out, "text", frame.Content)
+				}
+			}
+			continue
+		}
+
+		if mv.Message != nil {
+			content += mv.Message.Content
+			h.emit(out, "text", mv.Message.Content)
+		}
 	}
 
-	// stream by sentence / chunk
-	for _, chunk := range splitChunks(result, 30) {
-		h.emit(out, "text", chunk)
-		time.Sleep(30 * time.Millisecond)
-	}
 	h.emit(out, "done", "")
-	h.sess.Append(schema.AssistantMessage(result, nil))
+	h.sess.Append(schema.AssistantMessage(content, nil))
 }
 
-func (h *RadioHost) waitNext() string {
+func (h *Host) waitNext() string {
 	timer := time.NewTimer(autoContinueInterval)
 	defer timer.Stop()
 	for {
@@ -127,7 +172,7 @@ func (h *RadioHost) waitNext() string {
 	}
 }
 
-func (h *RadioHost) waitResume() string {
+func (h *Host) waitResume() string {
 	for {
 		select {
 		case <-h.ctx.Done():
@@ -144,44 +189,35 @@ func (h *RadioHost) waitResume() string {
 	}
 }
 
-func (h *RadioHost) isPaused() bool {
+func (h *Host) isPaused() bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.paused
 }
-func (h *RadioHost) setPaused(v bool) { h.mu.Lock(); h.paused = v; h.mu.Unlock() }
-func (h *RadioHost) stateLabel() string {
+func (h *Host) setPaused(v bool) { h.mu.Lock(); h.paused = v; h.mu.Unlock() }
+func (h *Host) stateLabel() string {
 	if h.isPaused() { return "paused" }
 	return "playing"
 }
-func (h *RadioHost) emit(out chan<- Event, typ, data string) {
+func (h *Host) emit(out chan<- Event, typ, data string) {
 	select {
 	case out <- Event{Type: typ, Data: data}:
 	default:
 	}
 }
 
-// ── helpers ──
-
-func lastUserMessage(sess *session.Session) string {
-	msgs := sess.GetMessages()
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role == schema.User {
-			return msgs[i].Content
-		}
-	}
-	return ""
+func truncate(s string, n int) string {
+	if len(s) <= n { return s }
+	return s[:n] + "..."
 }
 
-func splitChunks(s string, n int) []string {
-	runes := []rune(s)
-	var chunks []string
-	for i := 0; i < len(runes); i += n {
-		end := i + n
-		if end > len(runes) { end = len(runes) }
-		chunks = append(chunks, string(runes[i:end]))
-	}
-	return chunks
+type Config struct {
+	ChatModel model.ToolCallingChatModel
+	Songs     []playlist.Song
+}
+
+func BuildRunner(ctx context.Context, cfg Config) (*adk.Runner, error) {
+	return buildDeepAgent(ctx, cfg)
 }
 
 

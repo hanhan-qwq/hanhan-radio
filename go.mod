@@ -4,6 +4,7 @@ go 1.24.9
 
 require (
 	github.com/cloudwego/eino v0.8.8
+	github.com/cloudwego/eino-ext/adk/backend/local v0.2.4
 	github.com/cloudwego/eino-ext/components/model/ark v0.1.65
 	github.com/joho/godotenv v1.5.1
 	github.com/volcengine/volcengine-go-sdk v1.2.9
@@ -11,6 +12,7 @@ require (
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
+	github.com/bmatcuk/doublestar/v4 v4.10.0 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/mockey v1.3.0 // indirect

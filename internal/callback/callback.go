@@ -1,4 +1,4 @@
-package logging
+package callback
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 )
 
-func BuildLogHandler() callbacks.Handler {
+func Handler() callbacks.Handler {
 	return callbacks.NewHandlerBuilder().
 		OnStartFn(func(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
 			if mi := model.ConvCallbackInput(input); mi != nil {
