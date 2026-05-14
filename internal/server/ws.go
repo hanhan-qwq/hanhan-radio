@@ -1,45 +1,24 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 
-	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/schema"
-
-	"github.com/hanhan-qwq/hanhan-radio/internal/session"
+	"github.com/hanhan-qwq/hanhan-radio/internal/agent"
 )
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-var continuePrompts = []string{
-	"（继续聊，推一首歌单里的歌）",
-	"（继续说，自然的过渡到下一首歌）",
-	"（接下来再推一首，不用打招呼了直接聊歌）",
-	"（顺着刚才的氛围，再来一首）",
-	"（说说你一直想推但还没推的那首歌）",
-	"（聊一首你觉得被低估了的歌）",
-}
-
 type wsMessage struct {
 	Type string `json:"type"`
 	Data string `json:"data"`
-}
-
-// controlMsg represents a user action from the frontend
-type controlMsg struct {
-	kind string // "speak", "pause", "resume"
-	text string // only for "speak"
 }
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -51,17 +30,26 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	sess, _ := s.store.GetOrCreate("ws-" + randomID())
+	rs := agent.NewRadioSession(s.runner, sess)
+	defer rs.Close()
 
-	control := make(chan controlMsg, 8)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// forward output to ws
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for evt := range rs.Output() {
+			writeWS(conn, evt.Type, evt.Data)
+		}
+	}()
 
-	// reader goroutine
+	// start the radio
+	rs.Start()
+
+	// read ws messages, forward to radio session
 	go func() {
 		for {
 			_, msg, err := conn.ReadMessage()
 			if err != nil {
-				cancel()
 				return
 			}
 			var m wsMessage
@@ -71,157 +59,20 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			switch m.Type {
 			case "speak":
 				if m.Data != "" {
-					control <- controlMsg{kind: "speak", text: m.Data}
+					rs.Send(m.Data)
 				}
 			case "pause":
-				control <- controlMsg{kind: "pause"}
+				rs.Pause()
 			case "resume":
-				control <- controlMsg{kind: "resume"}
+				rs.Resume()
 			}
 		}
 	}()
 
-	// start the first segment
-	_ = sess.Append(schema.UserMessage("（电台开播了，打个招呼，然后推荐一首歌开始聊）"))
-	runLoop(ctx, s.runner, conn, sess, control)
+	<-done
 }
 
-var continueIdx int
-
-func nextContinuePrompt() string {
-	s := continuePrompts[continueIdx%len(continuePrompts)]
-	continueIdx++
-	return s
-}
-
-func runLoop(ctx context.Context, runner *adk.Runner, conn *websocket.Conn, sess *session.Session, control <-chan controlMsg) {
-	var mu sync.Mutex
-	paused := false
-
-	for {
-		writeWS(&mu, conn, "state", stateStr(paused))
-
-		events := runner.Run(ctx, sess.GetMessages())
-		var content strings.Builder
-
-	loop:
-		for {
-			event, ok := events.Next()
-			if !ok {
-				break
-			}
-			if event.Err != nil {
-				writeWS(&mu, conn, "error", event.Err.Error())
-				return
-			}
-			if event.Output == nil || event.Output.MessageOutput == nil {
-				continue
-			}
-
-			mv := event.Output.MessageOutput
-			if mv.Role == schema.Tool {
-				continue
-			}
-			if mv.Role != schema.Assistant && mv.Role != "" {
-				continue
-			}
-
-			if mv.IsStreaming {
-				mv.MessageStream.SetAutomaticClose()
-				for {
-					frame, err := mv.MessageStream.Recv()
-					if err != nil {
-						break loop
-					}
-					if frame != nil && frame.Content != "" {
-						content.WriteString(frame.Content)
-						writeWS(&mu, conn, "text", frame.Content)
-						// check for pause during streaming
-						select {
-						case c := <-control:
-							if c.kind == "pause" {
-								paused = true
-								writeWS(&mu, conn, "state", "paused")
-							} else if c.kind == "resume" {
-								paused = false
-								writeWS(&mu, conn, "state", "playing")
-							}
-						default:
-						}
-					}
-				}
-				continue
-			}
-
-			if mv.Message != nil {
-				content.WriteString(mv.Message.Content)
-				writeWS(&mu, conn, "text", mv.Message.Content)
-			}
-		}
-
-		_ = sess.Append(schema.AssistantMessage(content.String(), nil))
-		writeWS(&mu, conn, "done", "")
-
-		// wait for next action
-		if paused {
-			writeWS(&mu, conn, "state", "paused")
-			// wait for resume or speak
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case c := <-control:
-					if c.kind == "resume" {
-						paused = false
-						writeWS(&mu, conn, "state", "playing")
-						goto next
-					}
-					if c.kind == "speak" {
-						paused = false
-						writeWS(&mu, conn, "state", "playing")
-						_ = sess.Append(schema.UserMessage(c.text))
-						goto next
-					}
-				}
-			}
-		next:
-			_ = sess.Append(schema.UserMessage("（听众说话了，自然的接上继续聊）"))
-			continue
-		}
-
-		// not paused: auto-continue or wait for user
-		timer := time.NewTimer(4 * time.Second)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return
-		case c := <-control:
-			timer.Stop()
-			if c.kind == "pause" {
-				paused = true
-				continue
-			}
-			if c.kind == "speak" {
-				_ = sess.Append(schema.UserMessage(c.text))
-				continue
-			}
-		case <-timer.C:
-			_ = sess.Append(schema.UserMessage(nextContinuePrompt()))
-			continue
-		}
-	}
-}
-
-func stateStr(paused bool) string {
-	if paused {
-		return "paused"
-	}
-	return "playing"
-}
-
-func writeWS(mu *sync.Mutex, conn *websocket.Conn, typ, data string) {
-	mu.Lock()
-	defer mu.Unlock()
+func writeWS(conn *websocket.Conn, typ, data string) {
 	b, _ := json.Marshal(wsMessage{Type: typ, Data: data})
 	conn.WriteMessage(websocket.TextMessage, b)
 }
