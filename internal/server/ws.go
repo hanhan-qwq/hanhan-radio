@@ -23,11 +23,12 @@ var upgrader = websocket.Upgrader{
 }
 
 var continuePrompts = []string{
-	"（继续你的节目，推一首歌聊聊）",
-	"（上一段结束了，自然的接下去，再推一首歌单里的歌）",
-	"（听众还在，继续你的深夜电台，聊聊下一首歌）",
-	"（顺着刚才的氛围，再来一首，不用打招呼了直接聊）",
-	"（聊一首歌单里的经典，说说你为什么选它）",
+	"（继续聊，推一首歌单里的歌）",
+	"（继续说，自然的过渡到下一首歌）",
+	"（接下来再推一首，不用打招呼了直接聊歌）",
+	"（顺着刚才的氛围，再来一首）",
+	"（说说你一直想推但还没推的那首歌）",
+	"（聊一首你觉得被低估了的歌）",
 }
 
 type wsMessage struct {
@@ -81,7 +82,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// start the first segment
-	_ = sess.Append(schema.UserMessage("（电台开播了，开始你的节目，打个招呼然后推一首歌）"))
+	_ = sess.Append(schema.UserMessage("（电台开播了，打个招呼，然后推荐一首歌开始聊）"))
 	runLoop(ctx, s.runner, conn, sess, control)
 }
 
@@ -184,7 +185,7 @@ func runLoop(ctx context.Context, runner *adk.Runner, conn *websocket.Conn, sess
 				}
 			}
 		next:
-			_ = sess.Append(schema.UserMessage("（听众回来了，继续你的节目，自然的接上）"))
+			_ = sess.Append(schema.UserMessage("（听众说话了，自然的接上继续聊）"))
 			continue
 		}
 
