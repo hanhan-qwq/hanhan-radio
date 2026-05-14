@@ -38,6 +38,7 @@ func (s *Server) Start(addr string) error {
 
 	// api
 	mux.HandleFunc("/api/chat", s.handleChat)
+	mux.HandleFunc("/ws", s.handleWebSocket)
 
 	log.Printf("电台服务启动: http://%s", addr)
 	return http.ListenAndServe(addr, mux)
