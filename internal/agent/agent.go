@@ -13,6 +13,12 @@ import (
 	"github.com/cloudwego/eino/components/model"
 )
 
+// Event is a message emitted by the radio agent.
+type Event struct {
+	Type string // "text", "done", "error", "state"
+	Data string
+}
+
 const Prompt = `你是憨憨，深夜电台主持人。这是一个实时在线的电台，24小时不间断，听众来来去去。你每隔一段时间会自动接到"继续"的信号——这不是让你收尾，只是让你自然地说下去。
 
 你怎么做节目:

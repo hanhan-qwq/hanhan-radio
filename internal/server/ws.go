@@ -30,22 +30,21 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	sess, _ := s.store.GetOrCreate("ws-" + randomID())
-	rs := agent.NewRadioSession(s.runner, sess)
-	defer rs.Close()
+	host := agent.NewRadioHost(s.runner, sess)
+	defer host.Close()
 
-	// forward output to ws
+	events := host.Start()
+
+	// forward agent events to ws
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for evt := range rs.Output() {
+		for evt := range events {
 			writeWS(conn, evt.Type, evt.Data)
 		}
 	}()
 
-	// start the radio
-	rs.Start()
-
-	// read ws messages, forward to radio session
+	// read ws messages, forward to radio host
 	go func() {
 		for {
 			_, msg, err := conn.ReadMessage()
@@ -59,12 +58,12 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			switch m.Type {
 			case "speak":
 				if m.Data != "" {
-					rs.Send(m.Data)
+					host.Send(m.Data)
 				}
 			case "pause":
-				rs.Pause()
+				host.Pause()
 			case "resume":
-				rs.Resume()
+				host.Resume()
 			}
 		}
 	}()
