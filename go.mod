@@ -1,8 +1,6 @@
-module github.com/cloudwego/eino-examples/hanhan-radio
+module github.com/hanhan-qwq/hanhan-radio
 
 go 1.24.9
-
-replace github.com/cloudwego/eino-examples => ..
 
 require (
 	github.com/cloudwego/eino v0.8.8
