@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"os"
 
@@ -13,7 +12,6 @@ import (
 	"github.com/hanhan-qwq/hanhan-radio/internal/agent"
 	"github.com/hanhan-qwq/hanhan-radio/internal/logging"
 	radiomodel "github.com/hanhan-qwq/hanhan-radio/internal/model"
-	"github.com/hanhan-qwq/hanhan-radio/internal/server"
 	"github.com/hanhan-qwq/hanhan-radio/internal/session"
 )
 
@@ -21,17 +19,10 @@ func main() {
 	_ = godotenv.Load()
 	callbacks.AppendGlobalHandlers(logging.BuildLogHandler())
 
-	serve := flag.Bool("serve", false, "start HTTP server")
-	addr := flag.String("addr", ":8080", "server listen address")
-	flag.Parse()
-
+	ctx := context.Background()
 	cm := radiomodel.NewArkModel()
 
-	ctx := context.Background()
-	runner, err := agent.BuildRunner(ctx, agent.Config{
-		ChatModel:    cm,
-		MaxIteration: 50,
-	})
+	graph, err := agent.BuildGraph(ctx, cm)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -43,15 +34,25 @@ func main() {
 		os.Exit(1)
 	}
 
-	if *serve {
-		srv := server.New(runner, store)
-		if err := srv.Start(*addr); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		return
-	}
+	sess, _ := store.GetOrCreate("debug")
+	host := agent.NewRadioHost(graph, sess)
+	defer host.Close()
 
-	// CLI mode
-	runCLI(ctx, runner, store)
+	fmt.Println("🎙️  憨憨电台 (Graph Pipeline)")
+	fmt.Println("   memory_load → react_dj → text_preprocess → tts → audio → memory_save")
+	fmt.Println()
+
+	events := host.Start()
+
+	for evt := range events {
+		switch evt.Type {
+		case "text":
+			fmt.Print(evt.Data)
+		case "done":
+			fmt.Println()
+		case "error":
+			fmt.Fprintf(os.Stderr, "\nError: %s\n", evt.Data)
+			return
+		}
+	}
 }
