@@ -10,6 +10,7 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/hanhan-qwq/hanhan-radio/agentruntime/callback"
 	"github.com/hanhan-qwq/hanhan-radio/agentruntime/playlist"
 )
 
@@ -55,12 +56,16 @@ func (m *SessionMemory) Update(ctx context.Context, cm model.ToolCallingChatMode
 			schema.UserMessage(prompt),
 		})
 		if err != nil {
+			callback.Logger.Printf("memory ✗ update failed: %v", err)
 			return
 		}
 
 		m.mu.Lock()
 		m.Summary = resp.Content
 		m.mu.Unlock()
+
+		callback.Logger.Printf("memory ✓ #%d %s - %s | %d chars",
+			m.SongCount, entry.Track.Song, entry.Track.Artist, len([]rune(resp.Content)))
 	}()
 }
 

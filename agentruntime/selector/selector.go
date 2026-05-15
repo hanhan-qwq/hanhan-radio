@@ -9,6 +9,7 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/hanhan-qwq/hanhan-radio/agentruntime/callback"
 	"github.com/hanhan-qwq/hanhan-radio/agentruntime/memory"
 	"github.com/hanhan-qwq/hanhan-radio/agentruntime/playlist"
 )
@@ -71,7 +72,23 @@ func Next(ctx context.Context, cm model.ToolCallingChatModel, tracks []playlist.
 		return nil, fmt.Errorf("select: %w", err)
 	}
 
-	return parse(resp.Content, tracks)
+	result, err := parse(resp.Content, tracks)
+	if err != nil {
+		return nil, err
+	}
+
+	callback.Logger.Printf("selector → %s - %s | reason: %s | %d/%d songs",
+		result.Track.Song, result.Track.Artist, result.Reason,
+		memCtxSongCount(mem), len(tracks))
+
+	return result, nil
+}
+
+func memCtxSongCount(mem *memory.SessionMemory) int {
+	if mem == nil {
+		return 0
+	}
+	return mem.SongCount
 }
 
 func parse(content string, tracks []playlist.Track) (*Result, error) {
