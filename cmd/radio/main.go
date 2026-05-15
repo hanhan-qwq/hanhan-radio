@@ -13,6 +13,8 @@ import (
 	"github.com/cloudwego/eino-ext/components/model/ark"
 	arkModel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 
+	_ "github.com/hanhan-qwq/hanhan-radio/agentruntime/callback" // init log output
+
 	"github.com/hanhan-qwq/hanhan-radio/agentruntime/playlist"
 	"github.com/hanhan-qwq/hanhan-radio/agentruntime/radio"
 )

@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 
-	"github.com/hanhan-qwq/hanhan-radio/agentruntime/callback"
 	"github.com/hanhan-qwq/hanhan-radio/agentruntime/memory"
 	"github.com/hanhan-qwq/hanhan-radio/agentruntime/playlist"
 )
@@ -77,9 +77,8 @@ func Next(ctx context.Context, cm model.ToolCallingChatModel, tracks []playlist.
 		return nil, err
 	}
 
-	callback.Logger.Printf("selector → %s - %s | reason: %s | %d/%d songs",
-		result.Track.Song, result.Track.Artist, result.Reason,
-		memCtxSongCount(mem), len(tracks))
+	log.Printf("selector → %s - %s | %d/%d played",
+		result.Track.Song, result.Track.Artist, memCtxSongCount(mem), len(tracks))
 
 	return result, nil
 }

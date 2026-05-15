@@ -13,5 +13,6 @@ func initLogger() *log.Logger {
 	if err != nil {
 		return log.Default()
 	}
-	return log.New(f, "", log.LstdFlags)
+	log.SetOutput(f)
+	return log.Default()
 }

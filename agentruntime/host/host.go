@@ -3,14 +3,13 @@ package host
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-
-	"github.com/hanhan-qwq/hanhan-radio/agentruntime/callback"
 
 	"github.com/hanhan-qwq/hanhan-radio/agentruntime/memory"
 	"github.com/hanhan-qwq/hanhan-radio/agentruntime/playlist"
@@ -67,8 +66,8 @@ func (h *Host) Generate(ctx context.Context, in Input) (*schema.StreamReader[*sc
 	}
 
 	isFirst := in.Last == nil
-	callback.Logger.Printf("host → %s - %s | first=%v reason=%s",
-		in.Track.Song, in.Track.Artist, isFirst, in.Sel.Reason)
+	log.Printf("host → %s - %s | first=%v | mem=%d",
+		in.Track.Song, in.Track.Artist, isFirst, in.Memory.SongCount)
 
 	return h.cm.Stream(ctx, []*schema.Message{
 		schema.SystemMessage(prompt),
