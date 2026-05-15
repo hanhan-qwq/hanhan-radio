@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/components/tool"
 
 	"github.com/hanhan-qwq/hanhan-radio/agentruntime/host"
 	"github.com/hanhan-qwq/hanhan-radio/agentruntime/player"
@@ -15,11 +16,12 @@ import (
 )
 
 type Config struct {
-	ChatModel   model.ToolCallingChatModel
-	TracksJSON  string // path to tracks.json (pre-tagged)
-	PromptsDir  string
-	Interval    time.Duration
-	Player      player.Player
+	ChatModel  model.ToolCallingChatModel
+	TracksJSON string // path to tracks.json (pre-tagged)
+	PromptsDir string
+	Interval   time.Duration
+	Player     player.Player
+	Tools      []tool.BaseTool
 }
 
 type Radio struct {
@@ -46,7 +48,7 @@ func New(cfg Config) (*Radio, error) {
 		return nil, fmt.Errorf("load tracks: %w", err)
 	}
 
-	h, err := host.New(cfg.ChatModel, cfg.PromptsDir)
+	h, err := host.New(cfg.ChatModel, cfg.PromptsDir, cfg.Tools)
 	if err != nil {
 		return nil, fmt.Errorf("host: %w", err)
 	}
@@ -118,7 +120,8 @@ func (r *Radio) Start() error {
 			listenerState = ""
 		}
 
-		stream, err := r.host.Generate(r.ctx, sel.Track, sel, lastPlayed, state)
+		info := BuildContext(state)
+		stream, err := r.host.Generate(r.ctx, sel.Track, sel, lastPlayed, info.State, info.Time, info.Festival)
 		if err != nil {
 			return fmt.Errorf("host: %w", err)
 		}

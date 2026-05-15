@@ -11,10 +11,12 @@ import (
 	"github.com/joho/godotenv"
 
 	"github.com/cloudwego/eino-ext/components/model/ark"
+	"github.com/cloudwego/eino/components/tool"
 	arkModel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 
 	"github.com/hanhan-qwq/hanhan-radio/agentruntime/playlist"
 	"github.com/hanhan-qwq/hanhan-radio/agentruntime/radio"
+	"github.com/hanhan-qwq/hanhan-radio/agentruntime/tools"
 )
 
 func main() {
@@ -61,6 +63,7 @@ func main() {
 		TracksJSON: tracksJSON,
 		PromptsDir: "agentruntime/prompts",
 		Interval:   10 * time.Second,
+		Tools:      []tool.BaseTool{tools.Trending(), tools.Weather()},
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
