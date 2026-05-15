@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
@@ -23,6 +22,7 @@ const selectPrompt = `你是一个深夜电台的音乐编辑。从歌单中选�
 当前时间: %s
 %s
 %s
+%s
 歌单:
 %s
 
@@ -31,9 +31,7 @@ const selectPrompt = `你是一个深夜电台的音乐编辑。从歌单中选�
 
 只输出 JSON。`
 
-func Next(ctx context.Context, cm model.ToolCallingChatModel, tracks []playlist.Track, lastPlayed *playlist.Track, listenerState string) (*Result, error) {
-	now := time.Now().Format("15:04")
-
+func Next(ctx context.Context, cm model.ToolCallingChatModel, tracks []playlist.Track, lastPlayed *playlist.Track, listenerState, timeInfo, festival string) (*Result, error) {
 	var stateLine string
 	if listenerState != "" {
 		stateLine = fmt.Sprintf("听众状态: %s", listenerState)
@@ -46,12 +44,17 @@ func Next(ctx context.Context, cm model.ToolCallingChatModel, tracks []playlist.
 		lastLine = "这是今晚第一首歌"
 	}
 
+	var festivalLine string
+	if festival != "" {
+		festivalLine = fmt.Sprintf("今天是%s。", festival)
+	}
+
 	var trackList []string
 	for _, t := range tracks {
 		trackList = append(trackList, fmt.Sprintf("%s - %s [%s/%s]", t.Song, t.Artist, t.Mood, t.Style))
 	}
 
-	prompt := fmt.Sprintf(selectPrompt, now, lastLine, stateLine, strings.Join(trackList, "\n"))
+	prompt := fmt.Sprintf(selectPrompt, timeInfo, festivalLine, lastLine, stateLine, strings.Join(trackList, "\n"))
 
 	resp, err := cm.Generate(ctx, []*schema.Message{
 		schema.SystemMessage("你是音乐编辑。只输出 JSON。"),

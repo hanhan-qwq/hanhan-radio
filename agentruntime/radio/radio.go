@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/components/model"
-	"github.com/cloudwego/eino/components/tool"
 
 	"github.com/hanhan-qwq/hanhan-radio/agentruntime/host"
 	"github.com/hanhan-qwq/hanhan-radio/agentruntime/player"
@@ -17,11 +16,10 @@ import (
 
 type Config struct {
 	ChatModel  model.ToolCallingChatModel
-	TracksJSON string // path to tracks.json (pre-tagged)
+	TracksJSON string
 	PromptsDir string
 	Interval   time.Duration
 	Player     player.Player
-	Tools      []tool.BaseTool
 }
 
 type Radio struct {
@@ -48,7 +46,7 @@ func New(cfg Config) (*Radio, error) {
 		return nil, fmt.Errorf("load tracks: %w", err)
 	}
 
-	h, err := host.New(cfg.ChatModel, cfg.PromptsDir, cfg.Tools)
+	h, err := host.New(cfg.ChatModel, cfg.PromptsDir)
 	if err != nil {
 		return nil, fmt.Errorf("host: %w", err)
 	}
@@ -91,12 +89,18 @@ func (r *Radio) Start() error {
 	listenerState := ""
 
 	for {
+		var state string
+		if listenerState != "" {
+			state = listenerState
+			listenerState = ""
+		}
+		info := BuildContext(state)
+
 		// check for request
 		var sel *selector.Result
 		select {
 		case req := <-r.reqCh:
 			sel = &selector.Result{Track: req.track, Reason: "听众点歌"}
-			listenerState = req.state
 		default:
 		}
 
@@ -107,20 +111,12 @@ func (r *Radio) Start() error {
 				lastTrack = &lastPlayed.Track
 			}
 			var err error
-			sel, err = selector.Next(r.ctx, r.cm, r.tracks, lastTrack, listenerState)
+			sel, err = selector.Next(r.ctx, r.cm, r.tracks, lastTrack, info.State, info.Time, info.Festival)
 			if err != nil {
 				return fmt.Errorf("selector: %w", err)
 			}
 		}
 
-		// generate script
-		var state string
-		if listenerState != "" {
-			state = listenerState
-			listenerState = ""
-		}
-
-		info := BuildContext(state)
 		stream, err := r.host.Generate(r.ctx, sel.Track, sel, lastPlayed, info.State, info.Time, info.Festival)
 		if err != nil {
 			return fmt.Errorf("host: %w", err)
@@ -145,7 +141,6 @@ func (r *Radio) Start() error {
 		brief := host.Summary(content.String(), 80)
 		lastPlayed = &host.LastPlayed{Track: sel.Track, Brief: brief}
 
-		// play + wait
 		r.player.Play(sel.Track)
 		r.waitInterval()
 	}
