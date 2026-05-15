@@ -10,6 +10,7 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/hanhan-qwq/hanhan-radio/agentruntime/memory"
 	"github.com/hanhan-qwq/hanhan-radio/agentruntime/playlist"
 	"github.com/hanhan-qwq/hanhan-radio/agentruntime/selector"
 )
@@ -32,26 +33,35 @@ func New(cm model.ToolCallingChatModel, promptsDir string) (*Host, error) {
 	return &Host{cm: cm, firstTpl: string(first), nextTpl: string(next)}, nil
 }
 
-// Generate produces a streaming script for the given track.
-func (h *Host) Generate(ctx context.Context, track playlist.Track, sel *selector.Result, last *LastPlayed, state, timeInfo, festival string) (*schema.StreamReader[*schema.Message], error) {
+type Input struct {
+	Track     playlist.Track
+	Sel       *selector.Result
+	Last      *LastPlayed
+	State     string
+	TimeInfo  string
+	Festival  string
+	Memory    *memory.SessionMemory
+}
+
+func (h *Host) Generate(ctx context.Context, in Input) (*schema.StreamReader[*schema.Message], error) {
 	var prompt string
-	if last == nil {
+	if in.Last == nil {
 		prompt = h.firstTpl
-		prompt = strings.ReplaceAll(prompt, "{{song}}", track.Song)
-		prompt = strings.ReplaceAll(prompt, "{{artist}}", track.Artist)
-		prompt = strings.ReplaceAll(prompt, "{{reason}}", sel.Reason)
-		prompt = strings.ReplaceAll(prompt, "{{state}}", state)
-		prompt = injectTime(prompt, timeInfo, festival)
+		prompt = strings.ReplaceAll(prompt, "{{song}}", in.Track.Song)
+		prompt = strings.ReplaceAll(prompt, "{{artist}}", in.Track.Artist)
+		prompt = strings.ReplaceAll(prompt, "{{reason}}", in.Sel.Reason)
+		prompt = strings.ReplaceAll(prompt, "{{state}}", in.State)
+		prompt = injectContext(prompt, in)
 	} else {
 		prompt = h.nextTpl
-		prompt = strings.ReplaceAll(prompt, "{{last_brief}}", last.Brief)
-		prompt = strings.ReplaceAll(prompt, "{{last_song}}", last.Track.Song)
-		prompt = strings.ReplaceAll(prompt, "{{last_artist}}", last.Track.Artist)
-		prompt = strings.ReplaceAll(prompt, "{{song}}", track.Song)
-		prompt = strings.ReplaceAll(prompt, "{{artist}}", track.Artist)
-		prompt = strings.ReplaceAll(prompt, "{{reason}}", sel.Reason)
-		prompt = strings.ReplaceAll(prompt, "{{state}}", state)
-		prompt = injectTime(prompt, timeInfo, festival)
+		prompt = strings.ReplaceAll(prompt, "{{last_brief}}", in.Last.Brief)
+		prompt = strings.ReplaceAll(prompt, "{{last_song}}", in.Last.Track.Song)
+		prompt = strings.ReplaceAll(prompt, "{{last_artist}}", in.Last.Track.Artist)
+		prompt = strings.ReplaceAll(prompt, "{{song}}", in.Track.Song)
+		prompt = strings.ReplaceAll(prompt, "{{artist}}", in.Track.Artist)
+		prompt = strings.ReplaceAll(prompt, "{{reason}}", in.Sel.Reason)
+		prompt = strings.ReplaceAll(prompt, "{{state}}", in.State)
+		prompt = injectContext(prompt, in)
 	}
 
 	return h.cm.Stream(ctx, []*schema.Message{
@@ -60,16 +70,22 @@ func (h *Host) Generate(ctx context.Context, track playlist.Track, sel *selector
 	}, model.WithMaxTokens(1024))
 }
 
-func injectTime(prompt, timeInfo, festival string) string {
+func injectContext(prompt string, in Input) string {
 	var sb strings.Builder
 	sb.WriteString(prompt)
 	sb.WriteString("\n\n当前时间：")
-	sb.WriteString(timeInfo)
-	if festival != "" {
+	sb.WriteString(in.TimeInfo)
+	if in.Festival != "" {
 		sb.WriteString("，今天是")
-		sb.WriteString(festival)
+		sb.WriteString(in.Festival)
 	}
 	sb.WriteString("。")
+
+	if mem := in.Memory.HostContext(); mem != "" {
+		sb.WriteString("\n\n")
+		sb.WriteString(mem)
+	}
+
 	return sb.String()
 }
 

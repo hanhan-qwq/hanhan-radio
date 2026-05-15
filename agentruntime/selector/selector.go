@@ -9,6 +9,7 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/hanhan-qwq/hanhan-radio/agentruntime/memory"
 	"github.com/hanhan-qwq/hanhan-radio/agentruntime/playlist"
 )
 
@@ -23,6 +24,7 @@ const selectPrompt = `你是一个深夜电台的音乐编辑。从歌单中选�
 %s
 %s
 %s
+%s
 歌单:
 %s
 
@@ -31,7 +33,7 @@ const selectPrompt = `你是一个深夜电台的音乐编辑。从歌单中选�
 
 只输出 JSON。`
 
-func Next(ctx context.Context, cm model.ToolCallingChatModel, tracks []playlist.Track, lastPlayed *playlist.Track, listenerState, timeInfo, festival string) (*Result, error) {
+func Next(ctx context.Context, cm model.ToolCallingChatModel, tracks []playlist.Track, lastPlayed *playlist.Track, listenerState, timeInfo, festival string, mem *memory.SessionMemory) (*Result, error) {
 	var stateLine string
 	if listenerState != "" {
 		stateLine = fmt.Sprintf("听众状态: %s", listenerState)
@@ -49,12 +51,17 @@ func Next(ctx context.Context, cm model.ToolCallingChatModel, tracks []playlist.
 		festivalLine = fmt.Sprintf("今天是%s。", festival)
 	}
 
+	var memoryLine string
+	if memCtx := mem.SelectorContext(); memCtx != "" {
+		memoryLine = memCtx
+	}
+
 	var trackList []string
 	for _, t := range tracks {
 		trackList = append(trackList, fmt.Sprintf("%s - %s [%s/%s]", t.Song, t.Artist, t.Mood, t.Style))
 	}
 
-	prompt := fmt.Sprintf(selectPrompt, timeInfo, festivalLine, lastLine, stateLine, strings.Join(trackList, "\n"))
+	prompt := fmt.Sprintf(selectPrompt, timeInfo, festivalLine, memoryLine, lastLine, stateLine, strings.Join(trackList, "\n"))
 
 	resp, err := cm.Generate(ctx, []*schema.Message{
 		schema.SystemMessage("你是音乐编辑。只输出 JSON。"),
@@ -84,14 +91,12 @@ func parse(content string, tracks []playlist.Track) (*Result, error) {
 		return nil, fmt.Errorf("parse selector output: %w", err)
 	}
 
-	// match back to a track
 	for _, t := range tracks {
 		if t.Song == raw.Song && t.Artist == raw.Artist {
 			return &Result{Track: t, Reason: raw.Reason}, nil
 		}
 	}
 
-	// fallback: fuzzy match by song name
 	for _, t := range tracks {
 		if strings.Contains(t.Song, raw.Song) || strings.Contains(raw.Song, t.Song) {
 			return &Result{Track: t, Reason: raw.Reason}, nil

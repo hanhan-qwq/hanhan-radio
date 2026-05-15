@@ -9,6 +9,7 @@ import (
 	"github.com/cloudwego/eino/components/model"
 
 	"github.com/hanhan-qwq/hanhan-radio/agentruntime/host"
+	"github.com/hanhan-qwq/hanhan-radio/agentruntime/memory"
 	"github.com/hanhan-qwq/hanhan-radio/agentruntime/player"
 	"github.com/hanhan-qwq/hanhan-radio/agentruntime/playlist"
 	"github.com/hanhan-qwq/hanhan-radio/agentruntime/selector"
@@ -23,11 +24,13 @@ type Config struct {
 }
 
 type Radio struct {
-	cm       model.ToolCallingChatModel
-	tracks   []playlist.Track
-	host     *host.Host
-	player   player.Player
+	cm     model.ToolCallingChatModel
+	tracks []playlist.Track
+	host   *host.Host
+	player player.Player
+
 	interval time.Duration
+	memory   *memory.SessionMemory
 
 	subs   []chan string
 	reqCh  chan request
@@ -62,6 +65,7 @@ func New(cfg Config) (*Radio, error) {
 		host:     h,
 		player:   cfg.Player,
 		interval: cfg.Interval,
+		memory:   memory.New(),
 		reqCh:    make(chan request, 16),
 		ctx:      ctx,
 		cancel:   cancel,
@@ -96,7 +100,7 @@ func (r *Radio) Start() error {
 		}
 		info := BuildContext(state)
 
-		// check for request
+		// select
 		var sel *selector.Result
 		select {
 		case req := <-r.reqCh:
@@ -104,20 +108,28 @@ func (r *Radio) Start() error {
 		default:
 		}
 
-		// auto-select if no request
 		if sel == nil {
 			var lastTrack *playlist.Track
 			if lastPlayed != nil {
 				lastTrack = &lastPlayed.Track
 			}
 			var err error
-			sel, err = selector.Next(r.ctx, r.cm, r.tracks, lastTrack, info.State, info.Time, info.Festival)
+			sel, err = selector.Next(r.ctx, r.cm, r.tracks, lastTrack, info.State, info.Time, info.Festival, r.memory)
 			if err != nil {
 				return fmt.Errorf("selector: %w", err)
 			}
 		}
 
-		stream, err := r.host.Generate(r.ctx, sel.Track, sel, lastPlayed, info.State, info.Time, info.Festival)
+		// generate
+		stream, err := r.host.Generate(r.ctx, host.Input{
+			Track:    sel.Track,
+			Sel:      sel,
+			Last:     lastPlayed,
+			State:    info.State,
+			TimeInfo: info.Time,
+			Festival: info.Festival,
+			Memory:   r.memory,
+		})
 		if err != nil {
 			return fmt.Errorf("host: %w", err)
 		}
@@ -138,8 +150,16 @@ func (r *Radio) Start() error {
 		fmt.Println()
 		r.broadcast("\n---\n")
 
-		brief := host.Summary(content.String(), 80)
+		script := content.String()
+		brief := host.Summary(script, 80)
 		lastPlayed = &host.LastPlayed{Track: sel.Track, Brief: brief}
+
+		// update memory async
+		r.memory.Update(r.ctx, r.cm, memory.Entry{
+			Time:  time.Now(),
+			Track: sel.Track,
+			Brief: host.Summary(script, 120),
+		})
 
 		r.player.Play(sel.Track)
 		r.waitInterval()
