@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 
 	"hanhan-radio/agentruntime/selectsong"
@@ -31,7 +31,6 @@ const instruction = `你是 Hanhan Radio 的 AI 电台 DJ。你的工作是：
 - outro：结束语，如"感谢收听，享受音乐吧"
 
 输出规则：
-- 合成完成后，告诉用户音频文件路径
 - 保持温暖亲切的语调`
 
 // NewAgent creates the ChatModelAgent with all tools.
@@ -57,7 +56,7 @@ func NewAgentWithDefaults(ctx context.Context) (*adk.ChatModelAgent, error) {
 		return nil, err
 	}
 
-	songTool, err := selectsong.NewTool(ctx)
+	songTool, err := selectsong.NewTool(ctx, cm)
 	if err != nil {
 		return nil, err
 	}
