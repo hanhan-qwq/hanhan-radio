@@ -20,10 +20,11 @@ type SelectSongOutput struct {
 	Genre    string `json:"genre,omitempty"`
 }
 
-// Song is a raw song entry from the song library.
+// Song is a raw song entry scanned from the local music directory.
 type Song struct {
-	Title  string `json:"title"`
-	Artist string `json:"artist"`
+	Title    string `json:"title"`
+	Artist   string `json:"artist"`
+	FilePath string `json:"file_path"` // local file path, e.g., "music/李荣浩-年少有为.mp3"
 }
 
 // songsLoaded carries the user input and the loaded song library to build_prompt.

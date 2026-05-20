@@ -31,8 +31,8 @@ const instruction = `你是 Hanhan Radio 的 AI 电台 DJ。你的工作是：
 
 输出规则：
 - 完成任务后，必须严格按以下 JSON 数组格式输出最终结果（不要包含其他内容）：
-[{"title":"歌名","artist":"歌手","segue":"串词"}]
-- 数组中每个元素包含一首歌的 title（歌名）、artist（歌手）和 segue（串词）
+[{"title":"歌名","artist":"歌手","segue":"串词","file_path":"歌曲文件路径"}]
+- 数组中每个元素包含 title（歌名）、artist（歌手）、segue（串词）和 file_path（歌曲文件路径，从 select_song 返回的 audio_url 获取）
 - 串词要自然口语化，可以包含开场白、歌曲介绍和结束语
 - 保持温暖亲切的语调`
 

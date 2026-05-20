@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/cloudwego/eino/components/model"
@@ -30,7 +31,7 @@ func NewChain(ctx context.Context, cm model.BaseChatModel) (compose.Runnable[*Se
 
 	c.AppendLambda(
 		compose.InvokableLambda(func(ctx context.Context, in *SelectSongInput) (*songsLoaded, error) {
-			songs, err := loadSongs("data/songs.txt")
+			songs, err := loadSongs("music")
 			if err != nil {
 				return nil, fmt.Errorf("load songs: %w", err)
 			}
@@ -55,9 +56,15 @@ func NewChain(ctx context.Context, cm model.BaseChatModel) (compose.Runnable[*Se
 			if err := json.Unmarshal([]byte(msg.Content), &out); err != nil {
 				return nil, fmt.Errorf("parse llm response: %w\ncontent: %s", err, msg.Content)
 			}
-			// audio_url might be a placeholder; ensure it's set
+			// match against scanned files to get the real file path
+			for _, s := range in.Songs {
+				if strings.EqualFold(s.Title, out.Title) && strings.EqualFold(s.Artist, out.Artist) {
+					out.AudioURL = s.FilePath
+					break
+				}
+			}
 			if out.AudioURL == "" {
-				out.AudioURL = fmt.Sprintf("/music/%s/%s.mp3", out.Artist, out.Title)
+				return nil, fmt.Errorf("selected song %q - %q not found in local files", out.Title, out.Artist)
 			}
 			return &out, nil
 		}),
@@ -66,28 +73,51 @@ func NewChain(ctx context.Context, cm model.BaseChatModel) (compose.Runnable[*Se
 	return c.Compile(ctx)
 }
 
-func loadSongs(path string) ([]Song, error) {
-	data, err := os.ReadFile(path)
+func loadSongs(dir string) ([]Song, error) {
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read music dir %s: %w", dir, err)
 	}
-	lines := strings.Split(string(data), "\n")
+
 	var songs []Song
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
+	for _, entry := range entries {
+		if entry.IsDir() {
 			continue
 		}
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
+		name := entry.Name()
+		if !strings.HasSuffix(strings.ToLower(name), ".mp3") {
 			continue
 		}
-		artist := fields[len(fields)-1]
-		title := strings.Join(fields[:len(fields)-1], "")
-		songs = append(songs, Song{Title: title, Artist: artist})
+
+		base := strings.TrimSuffix(name, filepath.Ext(name))
+		// expect format: "歌手-歌名" or "歌手 - 歌名"
+		sep := " - "
+		idx := strings.Index(base, sep)
+		if idx == -1 {
+			// try without spaces
+			idx = strings.Index(base, "-")
+		}
+		if idx < 0 {
+			continue // skip files that don't match the pattern
+		}
+
+		artist := strings.TrimSpace(base[:idx])
+		var title string
+		if strings.Contains(base, sep) {
+			title = strings.TrimSpace(base[idx+len(sep):])
+		} else {
+			title = strings.TrimSpace(base[idx+1:])
+		}
+
+		songs = append(songs, Song{
+			Title:    title,
+			Artist:   artist,
+			FilePath: filepath.Join(dir, name),
+		})
 	}
+
 	if len(songs) == 0 {
-		return nil, fmt.Errorf("no songs found in %s", path)
+		return nil, fmt.Errorf("no .mp3 files found in %s", dir)
 	}
 	return songs, nil
 }
