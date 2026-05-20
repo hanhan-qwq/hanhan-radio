@@ -13,9 +13,19 @@ func NewGraph(ctx context.Context) (compose.Runnable[*SynthesizeInput, *Synthesi
 	g := compose.NewGraph[*SynthesizeInput, *SynthesizeOutput]()
 
 	g.AddLambdaNode("mock_synthesize", compose.InvokableLambda(func(ctx context.Context, in *SynthesizeInput) (*SynthesizeOutput, error) {
+		totalDuration := 0
+		for _, seg := range in.Segments {
+			totalDuration += len(seg.Segue) / 4 // rough estimate: ~4 chars/sec
+		}
+		if len(in.Segments) > 0 {
+			return &SynthesizeOutput{
+				AudioFile: fmt.Sprintf("/output/episode_%s.mp3", in.Segments[0].Title),
+				Duration:  totalDuration,
+			}, nil
+		}
 		return &SynthesizeOutput{
-			AudioFile: fmt.Sprintf("/output/episode_%s.mp3", in.Song.Title),
-			Duration:  in.Song.Duration + 60,
+			AudioFile: "/output/episode_empty.mp3",
+			Duration:  0,
 		}, nil
 	}))
 

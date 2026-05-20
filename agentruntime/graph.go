@@ -42,14 +42,13 @@ func NewGraph(ctx context.Context) (compose.Runnable[string, *synthesizeaudio.Sy
 
 	// Step 3: parse agent's JSON output into SynthesizeInput
 	g.AddLambdaNode("parse_result", compose.InvokableLambda(func(ctx context.Context, msg *schema.Message) (*synthesizeaudio.SynthesizeInput, error) {
-		// print agent output for user visibility
 		fmt.Println(msg.Content)
 
-		var si synthesizeaudio.SynthesizeInput
-		if err := json.Unmarshal([]byte(msg.Content), &si); err != nil {
+		var segments []synthesizeaudio.SongSegment
+		if err := json.Unmarshal([]byte(msg.Content), &segments); err != nil {
 			return nil, fmt.Errorf("parse agent JSON output: %w\nraw: %s", err, msg.Content)
 		}
-		return &si, nil
+		return &synthesizeaudio.SynthesizeInput{Segments: segments}, nil
 	}))
 
 	// Step 4: synthesize audio
