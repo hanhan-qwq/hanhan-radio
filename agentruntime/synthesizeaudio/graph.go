@@ -3,34 +3,68 @@ package synthesizeaudio
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/cloudwego/eino/compose"
+
+	"hanhan-radio/agentruntime/tts"
 )
 
-// NewGraph builds the synthesize_audio sub-graph.
-// Phase 1: mock — generates a fake audio file path.
-func NewGraph(ctx context.Context) (compose.Runnable[*SynthesizeInput, *SynthesizeOutput], error) {
+// NewGraph builds the synthesize_audio sub-graph:
+//
+//	SynthesizeInput → tts → concat → SynthesizeOutput
+func NewGraph(ctx context.Context, ttsClient *tts.Client, outputDir string) (compose.Runnable[*SynthesizeInput, *SynthesizeOutput], error) {
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return nil, fmt.Errorf("create output dir %s: %w", outputDir, err)
+	}
+
 	g := compose.NewGraph[*SynthesizeInput, *SynthesizeOutput]()
 
-	g.AddLambdaNode("mock_synthesize", compose.InvokableLambda(func(ctx context.Context, in *SynthesizeInput) (*SynthesizeOutput, error) {
-		totalDuration := 0
-		for _, seg := range in.Segments {
-			totalDuration += len(seg.Segue) / 4 // rough estimate: ~4 chars/sec
+	g.AddLambdaNode("tts", compose.InvokableLambda(func(ctx context.Context, in *SynthesizeInput) (*synthesizeAudioReady, error) {
+		if len(in.Segments) == 0 {
+			return nil, fmt.Errorf("no segments to synthesize")
 		}
-		if len(in.Segments) > 0 {
-			return &SynthesizeOutput{
-				AudioFile: fmt.Sprintf("/output/episode_%s.mp3", in.Segments[0].Title),
-				Duration:  totalDuration,
-			}, nil
+
+		seg := in.Segments[0]
+
+		voicePath := filepath.Join(outputDir, "voice_0.wav")
+		audioBytes, err := ttsClient.Synthesize(ctx, seg.Segue)
+		if err != nil {
+			return nil, fmt.Errorf("tts synthesize: %w", err)
 		}
-		return &SynthesizeOutput{
-			AudioFile: "/output/episode_empty.mp3",
-			Duration:  0,
+		if err := os.WriteFile(voicePath, audioBytes, 0644); err != nil {
+			return nil, fmt.Errorf("write voice file: %w", err)
+		}
+
+		outputPath := filepath.Join(outputDir, fmt.Sprintf("ep_%s.mp3", seg.Title))
+
+		return &synthesizeAudioReady{
+			VoicePath:  voicePath,
+			MusicPath:  seg.FilePath,
+			OutputPath: outputPath,
 		}, nil
 	}))
 
-	g.AddEdge(compose.START, "mock_synthesize")
-	g.AddEdge("mock_synthesize", compose.END)
+	g.AddLambdaNode("concat", compose.InvokableLambda(func(ctx context.Context, in *synthesizeAudioReady) (*SynthesizeOutput, error) {
+		if err := Concat(ctx, in.VoicePath, in.MusicPath, in.OutputPath); err != nil {
+			return nil, fmt.Errorf("concat audio: %w", err)
+		}
+
+		dur, err := ProbeDuration(ctx, in.OutputPath)
+		if err != nil {
+			return nil, fmt.Errorf("probe duration: %w", err)
+		}
+
+		return &SynthesizeOutput{
+			AudioFile: in.OutputPath,
+			Duration:  dur,
+		}, nil
+	}))
+
+	g.AddEdge(compose.START, "tts")
+	g.AddEdge("tts", "concat")
+	g.AddEdge("concat", compose.END)
 
 	return g.Compile(ctx)
 }

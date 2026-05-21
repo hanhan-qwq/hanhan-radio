@@ -13,6 +13,13 @@ type SynthesizeInput struct {
 	Segments []SongSegment `json:"segments"`
 }
 
+// synthesizeAudioReady is the intermediate state between tts and concat nodes.
+type synthesizeAudioReady struct {
+	VoicePath  string // TTS generated voice file
+	MusicPath  string // original music file path (from SongSegment.FilePath)
+	OutputPath string // final output path after concat
+}
+
 // SynthesizeOutput is the output of the synthesize_audio node.
 type SynthesizeOutput struct {
 	AudioFile string `json:"audio_file"`

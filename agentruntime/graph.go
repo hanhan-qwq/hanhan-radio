@@ -4,12 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 
 	"hanhan-radio/agentruntime/synthesizeaudio"
+	"hanhan-radio/agentruntime/tts"
 )
+
+const outputDir = "output"
 
 // NewGraph builds the main radio pipeline:
 //
@@ -25,7 +29,11 @@ func NewGraph(ctx context.Context) (compose.Runnable[string, *synthesizeaudio.Sy
 		return nil, fmt.Errorf("wrap agent as lambda: %w", err)
 	}
 
-	audioGraph, err := synthesizeaudio.NewGraph(ctx)
+	ttsClient := tts.NewClient(tts.Config{
+		APIKey: os.Getenv("MIMO_API_KEY"),
+	})
+
+	audioGraph, err := synthesizeaudio.NewGraph(ctx, ttsClient, outputDir)
 	if err != nil {
 		return nil, fmt.Errorf("create synthesize graph: %w", err)
 	}
@@ -51,7 +59,7 @@ func NewGraph(ctx context.Context) (compose.Runnable[string, *synthesizeaudio.Sy
 		return &synthesizeaudio.SynthesizeInput{Segments: segments}, nil
 	}))
 
-	// Step 4: synthesize audio
+	// Step 4: synthesize audio (TTS + concat)
 	g.AddLambdaNode("synthesize_audio", compose.InvokableLambda(func(ctx context.Context, in *synthesizeaudio.SynthesizeInput) (*synthesizeaudio.SynthesizeOutput, error) {
 		return audioGraph.Invoke(ctx, in)
 	}))
