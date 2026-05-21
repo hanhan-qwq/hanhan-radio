@@ -66,7 +66,10 @@ func NewGraph(ctx context.Context) (compose.Runnable[string, *synthesizeaudio.Sy
 
 	// Step 4: synthesize audio (TTS + concat)
 	g.AddLambdaNode("synthesize_audio", compose.InvokableLambda(func(ctx context.Context, in *synthesizeaudio.SynthesizeInput) (*synthesizeaudio.SynthesizeOutput, error) {
-		log.L().Debugw("synthesize_input", "segments", len(in.Segments))
+		if dir := synthesizeaudio.OutputDirFromCtx(ctx); dir != "" && in.OutputDir == "" {
+			in.OutputDir = dir
+		}
+		log.L().Debugw("synthesize_input", "segments", len(in.Segments), "output_dir", in.OutputDir)
 		out, err := audioGraph.Invoke(ctx, in)
 		if err != nil {
 			return nil, err

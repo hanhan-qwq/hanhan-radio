@@ -29,9 +29,17 @@ func NewGraph(ctx context.Context, ttsClient *tts.Client, outputDir string) (com
 
 		seg := in.Segments[0]
 
+		dir := in.OutputDir
+		if dir == "" {
+			dir = outputDir
+		}
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("create output dir %s: %w", dir, err)
+		}
+
 		log.L().Infow("tts_start", "segue_len", len(seg.Segue), "title", seg.Title)
 
-		voicePath := filepath.Join(outputDir, "voice_0.wav")
+		voicePath := filepath.Join(dir, "voice_0.wav")
 		audioBytes, err := ttsClient.Synthesize(ctx, seg.Segue)
 		if err != nil {
 			return nil, fmt.Errorf("tts synthesize: %w", err)
@@ -42,12 +50,13 @@ func NewGraph(ctx context.Context, ttsClient *tts.Client, outputDir string) (com
 
 		log.L().Infow("tts_done", "voice_bytes", len(audioBytes), "voice_path", voicePath)
 
-		outputPath := filepath.Join(outputDir, fmt.Sprintf("ep_%s.mp3", seg.Title))
+		outputPath := filepath.Join(dir, "final.mp3")
 
 		return &synthesizeAudioReady{
 			VoicePath:  voicePath,
 			MusicPath:  seg.FilePath,
 			OutputPath: outputPath,
+			Segments:   in.Segments,
 		}, nil
 	}))
 
@@ -66,6 +75,7 @@ func NewGraph(ctx context.Context, ttsClient *tts.Client, outputDir string) (com
 		return &SynthesizeOutput{
 			AudioFile: in.OutputPath,
 			Duration:  dur,
+			Segments:  in.Segments,
 		}, nil
 	}))
 
