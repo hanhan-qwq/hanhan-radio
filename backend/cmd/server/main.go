@@ -6,12 +6,22 @@ import (
 
 	"github.com/joho/godotenv"
 
+	_ "hanhan-radio/backend/api"
+
 	"hanhan-radio/agentruntime"
 	pkglog "hanhan-radio/agentruntime/log"
 	"hanhan-radio/backend/internal/handler"
 	"hanhan-radio/backend/internal/manager"
 	"hanhan-radio/backend/internal/router"
 )
+
+// @title           Hanhan Radio API
+// @description     AI 电台 DJ — 提交文本，异步生成电台音频
+// @version         1.0.0
+// @contact.name    Hanhan Radio Team
+
+// @host      localhost:8080
+// @BasePath  /api/v1
 
 func main() {
 	if err := godotenv.Load(); err != nil {

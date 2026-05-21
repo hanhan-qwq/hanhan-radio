@@ -1,0 +1,163 @@
+basePath: /api/v1
+definitions:
+  backend_internal_handler.CreateEpisodeRequest:
+    properties:
+      prompt:
+        example: 想听点轻松的
+        type: string
+    type: object
+  backend_internal_handler.Envelope:
+    properties:
+      code:
+        example: 0
+        type: integer
+      data: {}
+      message:
+        example: ok
+        type: string
+    type: object
+  backend_internal_handler.EpisodeList:
+    properties:
+      episodes:
+        items:
+          $ref: '#/definitions/hanhan-radio_backend_internal_manager.Episode'
+        type: array
+    type: object
+  backend_internal_handler.ErrorEnvelope:
+    properties:
+      code:
+        example: 40000
+        type: integer
+      data:
+        type: object
+      message:
+        example: prompt is required
+        type: string
+    type: object
+  hanhan-radio_backend_internal_manager.Episode:
+    properties:
+      audio_url:
+        type: string
+      created_at:
+        type: string
+      duration:
+        type: integer
+      error:
+        type: string
+      id:
+        type: string
+      prompt:
+        type: string
+      segments:
+        items:
+          $ref: '#/definitions/hanhan-radio_backend_internal_manager.SongSegmentItem'
+        type: array
+      status:
+        $ref: '#/definitions/hanhan-radio_backend_internal_manager.EpisodeStatus'
+    type: object
+  hanhan-radio_backend_internal_manager.EpisodeStatus:
+    enum:
+    - pending
+    - processing
+    - done
+    - failed
+    type: string
+    x-enum-varnames:
+    - StatusPending
+    - StatusProcessing
+    - StatusDone
+    - StatusFailed
+  hanhan-radio_backend_internal_manager.SongSegmentItem:
+    properties:
+      artist:
+        type: string
+      segue:
+        type: string
+      title:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    name: Hanhan Radio Team
+  description: AI 电台 DJ — 提交文本，异步生成电台音频
+  title: Hanhan Radio API
+  version: 1.0.0
+paths:
+  /episodes:
+    get:
+      description: 按创建时间倒序返回最近 episode 列表（排除失败的），最多 50 条。列表中的 segments 不含 segue 全文。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/backend_internal_handler.Envelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/backend_internal_handler.EpisodeList'
+              type: object
+      summary: 获取 episode 列表
+      tags:
+      - episodes
+    post:
+      consumes:
+      - application/json
+      description: 提交用户输入文本，后台异步生成电台音频，立即返回 episode ID
+      parameters:
+      - description: 用户输入
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/backend_internal_handler.CreateEpisodeRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 创建成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/backend_internal_handler.Envelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/hanhan-radio_backend_internal_manager.Episode'
+              type: object
+        "400":
+          description: 参数错误
+          schema:
+            $ref: '#/definitions/backend_internal_handler.ErrorEnvelope'
+      summary: 创建 episode
+      tags:
+      - episodes
+  /episodes/{id}:
+    get:
+      description: 根据 ID 查询 episode 状态和结果。前端轮询此接口直到 status 为 done 或 failed。
+      parameters:
+      - description: episode ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/backend_internal_handler.Envelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/hanhan-radio_backend_internal_manager.Episode'
+              type: object
+        "404":
+          description: episode 不存在
+          schema:
+            $ref: '#/definitions/backend_internal_handler.ErrorEnvelope'
+      summary: 查询单个 episode
+      tags:
+      - episodes
+swagger: "2.0"

@@ -1,7 +1,7 @@
 .env
 data/
 /radio
-/docs
+/.docs
 .claude
 /music
 /output
