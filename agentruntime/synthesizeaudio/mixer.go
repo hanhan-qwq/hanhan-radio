@@ -1,11 +1,14 @@
 package synthesizeaudio
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"hanhan-radio/agentruntime/log"
 )
 
 // Concat concatenates a voice intro (WAV) with a music file using ffmpeg.
@@ -15,8 +18,6 @@ func Concat(ctx context.Context, voicePath, musicPath, outputPath string) error 
 		return fmt.Errorf("create output dir: %w", err)
 	}
 
-	// Convert voice to stereo + 44100Hz to match music, then concat.
-	// [0:a]aformat=... → [voice]; [voice][1:a]concat → output
 	args := []string{
 		"-y",
 		"-i", voicePath,
@@ -28,11 +29,13 @@ func Concat(ctx context.Context, voicePath, musicPath, outputPath string) error 
 		outputPath,
 	}
 
+	var stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("ffmpeg concat: %w", err)
+		log.L().Errorw("ffmpeg failed", "stderr", stderr.String())
+		return fmt.Errorf("ffmpeg concat: %w\n%s", err, stderr.String())
 	}
 
 	return nil

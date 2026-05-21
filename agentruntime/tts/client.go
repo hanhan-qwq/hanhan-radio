@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"hanhan-radio/agentruntime/log"
 )
 
 const defaultBaseURL = "https://api.xiaomimimo.com/v1"
@@ -53,6 +55,8 @@ func NewClient(cfg Config) *Client {
 
 // Synthesize converts text to speech, returning the raw audio bytes (WAV).
 func (c *Client) Synthesize(ctx context.Context, text string) ([]byte, error) {
+	start := time.Now()
+
 	body := chatRequest{
 		Model: c.cfg.Model,
 		Messages: []message{
@@ -89,7 +93,10 @@ func (c *Client) Synthesize(ctx context.Context, text string) ([]byte, error) {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 
+	elapsed := time.Since(start).Milliseconds()
+
 	if resp.StatusCode != http.StatusOK {
+		log.L().Errorw("tts_api_error", "status", resp.StatusCode, "latency_ms", elapsed, "body", string(respBytes))
 		return nil, fmt.Errorf("tts api error (status %d): %s", resp.StatusCode, string(respBytes))
 	}
 
@@ -111,6 +118,8 @@ func (c *Client) Synthesize(ctx context.Context, text string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode base64 audio: %w", err)
 	}
+
+	log.L().Infow("tts_api_done", "text_len", len(text), "audio_bytes", len(raw), "latency_ms", elapsed)
 
 	return raw, nil
 }

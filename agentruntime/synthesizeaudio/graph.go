@@ -8,6 +8,7 @@ import (
 
 	"github.com/cloudwego/eino/compose"
 
+	"hanhan-radio/agentruntime/log"
 	"hanhan-radio/agentruntime/tts"
 )
 
@@ -28,6 +29,8 @@ func NewGraph(ctx context.Context, ttsClient *tts.Client, outputDir string) (com
 
 		seg := in.Segments[0]
 
+		log.L().Infow("tts_start", "segue_len", len(seg.Segue), "title", seg.Title)
+
 		voicePath := filepath.Join(outputDir, "voice_0.wav")
 		audioBytes, err := ttsClient.Synthesize(ctx, seg.Segue)
 		if err != nil {
@@ -36,6 +39,8 @@ func NewGraph(ctx context.Context, ttsClient *tts.Client, outputDir string) (com
 		if err := os.WriteFile(voicePath, audioBytes, 0644); err != nil {
 			return nil, fmt.Errorf("write voice file: %w", err)
 		}
+
+		log.L().Infow("tts_done", "voice_bytes", len(audioBytes), "voice_path", voicePath)
 
 		outputPath := filepath.Join(outputDir, fmt.Sprintf("ep_%s.mp3", seg.Title))
 
@@ -47,6 +52,8 @@ func NewGraph(ctx context.Context, ttsClient *tts.Client, outputDir string) (com
 	}))
 
 	g.AddLambdaNode("concat", compose.InvokableLambda(func(ctx context.Context, in *synthesizeAudioReady) (*SynthesizeOutput, error) {
+		log.L().Infow("concat_start", "voice", in.VoicePath, "music", in.MusicPath)
+
 		if err := Concat(ctx, in.VoicePath, in.MusicPath, in.OutputPath); err != nil {
 			return nil, fmt.Errorf("concat audio: %w", err)
 		}

@@ -9,6 +9,7 @@ import (
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 
+	"hanhan-radio/agentruntime/log"
 	"hanhan-radio/agentruntime/synthesizeaudio"
 	"hanhan-radio/agentruntime/tts"
 )
@@ -50,18 +51,28 @@ func NewGraph(ctx context.Context) (compose.Runnable[string, *synthesizeaudio.Sy
 
 	// Step 3: parse agent's JSON output into SynthesizeInput
 	g.AddLambdaNode("parse_result", compose.InvokableLambda(func(ctx context.Context, msg *schema.Message) (*synthesizeaudio.SynthesizeInput, error) {
-		fmt.Println(msg.Content)
+		log.L().Debugw("agent response", "content", msg.Content)
 
 		var segments []synthesizeaudio.SongSegment
 		if err := json.Unmarshal([]byte(msg.Content), &segments); err != nil {
 			return nil, fmt.Errorf("parse agent JSON output: %w\nraw: %s", err, msg.Content)
 		}
+
+		log.L().Infow("parsed", "node", "parse_result", "segments", len(segments),
+			"first_title", segments[0].Title, "first_artist", segments[0].Artist)
+
 		return &synthesizeaudio.SynthesizeInput{Segments: segments}, nil
 	}))
 
 	// Step 4: synthesize audio (TTS + concat)
 	g.AddLambdaNode("synthesize_audio", compose.InvokableLambda(func(ctx context.Context, in *synthesizeaudio.SynthesizeInput) (*synthesizeaudio.SynthesizeOutput, error) {
-		return audioGraph.Invoke(ctx, in)
+		log.L().Debugw("synthesize_input", "segments", len(in.Segments))
+		out, err := audioGraph.Invoke(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		log.L().Infow("done", "node", "synthesize_audio", "output", out.AudioFile, "duration", out.Duration)
+		return out, nil
 	}))
 
 	g.AddEdge(compose.START, "build_messages")

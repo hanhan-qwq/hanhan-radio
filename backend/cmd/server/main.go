@@ -10,12 +10,16 @@ import (
 	"github.com/joho/godotenv"
 
 	"hanhan-radio/agentruntime"
+	pkglog "hanhan-radio/agentruntime/log"
 )
 
 func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Fatalf("load .env: %v", err)
 	}
+
+	pkglog.InitCallbacks()
+	defer pkglog.Sync()
 
 	ctx := context.Background()
 
@@ -43,12 +47,17 @@ func main() {
 			continue
 		}
 
+		pkglog.L().Infow("request_start", "input", input)
+
 		output, err := graph.Invoke(ctx, input)
 		if err != nil {
+			pkglog.L().Errorw("request_failed", "input", input, "err", err)
 			fmt.Printf("错误: %v\n", err)
 			fmt.Println("---")
 			continue
 		}
+
+		pkglog.L().Infow("request_done", "output", output.AudioFile, "duration", output.Duration)
 		fmt.Printf("音频已生成: %s (时长: %d秒)\n", output.AudioFile, output.Duration)
 		fmt.Println("---")
 	}
