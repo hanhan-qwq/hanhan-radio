@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 
+	"github.com/cloudwego/eino/adk"
 	"github.com/joho/godotenv"
 
 	_ "hanhan-radio/backend/api"
@@ -38,8 +39,10 @@ func main() {
 		log.Fatalf("create agent: %v", err)
 	}
 
+	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent})
+
 	store := manager.NewStore()
-	epManager := manager.New(agent, store)
+	epManager := manager.New(runner, store)
 	h := handler.New(epManager, store)
 	r := router.New(h)
 

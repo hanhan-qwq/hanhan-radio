@@ -5,11 +5,10 @@ import (
 	"os"
 
 	duckduckgo "github.com/cloudwego/eino-ext/components/tool/duckduckgo"
+	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
-	"github.com/cloudwego/eino/flow/agent/react"
-	"github.com/cloudwego/eino/schema"
 
 	"hanhan-radio/agentruntime/selectsong"
 	"hanhan-radio/agentruntime/synthesizeaudio"
@@ -57,22 +56,24 @@ const instruction = `你是 Hanhan Radio 的 AI 电台 DJ，一个温暖亲切�
 
 闲聊时直接输出文字回复即可，不需要 JSON 格式。`
 
-// NewAgent creates a ReAct agent with the given tools.
-func NewAgent(ctx context.Context, cm model.ToolCallingChatModel, tools ...tool.BaseTool) (*react.Agent, error) {
-	return react.NewAgent(ctx, &react.AgentConfig{
-		ToolCallingModel: cm,
-		MessageModifier: func(ctx context.Context, input []*schema.Message) []*schema.Message {
-			return append([]*schema.Message{schema.SystemMessage(instruction)}, input...)
+// NewAgent creates a ChatModelAgent with the given tools.
+func NewAgent(ctx context.Context, cm model.BaseChatModel, tools ...tool.BaseTool) (*adk.ChatModelAgent, error) {
+	return adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
+		Name:        "HanhanRadio",
+		Description: "AI 电台 DJ，理解用户心情点歌，生成电台音频",
+		Instruction: instruction,
+		Model:       cm,
+		ToolsConfig: adk.ToolsConfig{
+			ToolsNodeConfig: compose.ToolsNodeConfig{
+				Tools: tools,
+			},
 		},
-		ToolsConfig: compose.ToolsNodeConfig{
-			Tools: tools,
-		},
-		MaxStep: 10,
+		MaxIterations: 10,
 	})
 }
 
 // NewAgentWithDefaults creates the agent with default model, select_song, web search, and synthesize_audio tools.
-func NewAgentWithDefaults(ctx context.Context) (*react.Agent, error) {
+func NewAgentWithDefaults(ctx context.Context) (*adk.ChatModelAgent, error) {
 	cm, err := NewModel(ctx)
 	if err != nil {
 		return nil, err

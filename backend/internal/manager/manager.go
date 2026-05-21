@@ -11,8 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cloudwego/eino/flow/agent/react"
-	"github.com/cloudwego/eino/schema"
+	"github.com/cloudwego/eino/adk"
 
 	"hanhan-radio/agentruntime/log"
 	"hanhan-radio/agentruntime/synthesizeaudio"
@@ -111,13 +110,13 @@ func (s *Store) Update(id string, fn func(*Episode)) {
 
 // Manager orchestrates episode creation and async agent execution.
 type Manager struct {
-	agent *react.Agent
-	store *Store
+	runner *adk.Runner
+	store  *Store
 }
 
-// New creates a Manager with the given agent and store.
-func New(a *react.Agent, s *Store) *Manager {
-	return &Manager{agent: a, store: s}
+// New creates a Manager with the given runner and store.
+func New(r *adk.Runner, s *Store) *Manager {
+	return &Manager{runner: r, store: s}
 }
 
 // Submit creates an episode and starts async execution.
@@ -153,7 +152,8 @@ func (m *Manager) execute(id, prompt string) {
 
 	log.L().Infow("episode_start", "id", id, "prompt", prompt)
 
-	msg, err := m.agent.Generate(ctx, []*schema.Message{schema.UserMessage(prompt)})
+	iter := m.runner.Query(ctx, prompt)
+	content, err := consumeAgentOutput(iter)
 	if err != nil {
 		log.L().Errorw("episode_failed", "id", id, "err", err)
 		m.store.Update(id, func(ep *Episode) {
@@ -163,13 +163,13 @@ func (m *Manager) execute(id, prompt string) {
 		return
 	}
 
-	log.L().Debugw("agent_response", "id", id, "content", msg.Content)
+	log.L().Debugw("agent_response", "id", id, "content", content)
 
-	trimmed := strings.TrimSpace(msg.Content)
+	trimmed := strings.TrimSpace(content)
 	if strings.HasPrefix(trimmed, "[") {
-		m.handleMusicResponse(ctx, id, outDir, msg.Content)
+		m.handleMusicResponse(ctx, id, outDir, content)
 	} else {
-		m.handleChatResponse(id, msg.Content)
+		m.handleChatResponse(id, content)
 	}
 }
 
@@ -212,6 +212,31 @@ func (m *Manager) handleChatResponse(id, content string) {
 		ep.Status = StatusDone
 		ep.Message = content
 	})
+}
+
+// consumeAgentOutput drains the async iterator and returns the final message content.
+func consumeAgentOutput(iter *adk.AsyncIterator[*adk.AgentEvent]) (string, error) {
+	var lastContent string
+	for {
+		event, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if event.Err != nil {
+			return "", event.Err
+		}
+		if event.Output != nil && event.Output.MessageOutput != nil {
+			msg, err := event.Output.MessageOutput.GetMessage()
+			if err == nil && msg != nil && msg.Content != "" {
+				lastContent = msg.Content
+			}
+		}
+	}
+
+	if lastContent == "" {
+		return "", fmt.Errorf("agent returned empty response")
+	}
+	return lastContent, nil
 }
 
 func genID() (string, error) {
