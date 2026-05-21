@@ -46,24 +46,6 @@ synthesize_audio 调用规则：
 
 重要：必须严格按照步骤 1→2→3→4→5→6 的顺序执行，不要跳过任何步骤。`
 
-// errSafeTool wraps an InvokableTool so errors are returned as result strings
-// instead of propagating up and crashing the agent.
-type errSafeTool struct {
-	inner tool.InvokableTool
-}
-
-func (t *errSafeTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
-	return t.inner.Info(ctx)
-}
-
-func (t *errSafeTool) InvokableRun(ctx context.Context, jsonArgs string, opts ...tool.Option) (string, error) {
-	result, err := t.inner.InvokableRun(ctx, jsonArgs, opts...)
-	if err != nil {
-		return "搜索出错: " + err.Error(), nil
-	}
-	return result, nil
-}
-
 // NewAgent creates a ReAct agent with the given tools.
 func NewAgent(ctx context.Context, cm model.ToolCallingChatModel, tools ...tool.BaseTool) (*react.Agent, error) {
 	return react.NewAgent(ctx, &react.AgentConfig{
@@ -104,5 +86,5 @@ func NewAgentWithDefaults(ctx context.Context) (*react.Agent, error) {
 		return nil, err
 	}
 
-	return NewAgent(ctx, cm, songTool, &errSafeTool{inner: searchTool}, audioTool)
+	return NewAgent(ctx, cm, songTool, safeTool(searchTool), audioTool)
 }

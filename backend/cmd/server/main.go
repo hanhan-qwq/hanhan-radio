@@ -33,13 +33,13 @@ func main() {
 
 	ctx := context.Background()
 
-	graph, err := agentruntime.NewGraph(ctx)
+	agent, err := agentruntime.NewAgentWithDefaults(ctx)
 	if err != nil {
-		log.Fatalf("create graph: %v", err)
+		log.Fatalf("create agent: %v", err)
 	}
 
 	store := manager.NewStore()
-	epManager := manager.New(graph, store)
+	epManager := manager.New(agent, store)
 	h := handler.New(epManager, store)
 	r := router.New(h)
 

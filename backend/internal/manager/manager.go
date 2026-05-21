@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cloudwego/eino/compose"
+	"github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
 
 	"hanhan-radio/agentruntime/log"
@@ -109,13 +109,13 @@ func (s *Store) Update(id string, fn func(*Episode)) {
 
 // Manager orchestrates episode creation and async agent execution.
 type Manager struct {
-	graph compose.Runnable[string, *schema.Message]
+	agent *react.Agent
 	store *Store
 }
 
-// New creates a Manager with the given agent graph and store.
-func New(g compose.Runnable[string, *schema.Message], s *Store) *Manager {
-	return &Manager{graph: g, store: s}
+// New creates a Manager with the given agent and store.
+func New(a *react.Agent, s *Store) *Manager {
+	return &Manager{agent: a, store: s}
 }
 
 // Submit creates an episode and starts async execution.
@@ -151,7 +151,7 @@ func (m *Manager) execute(id, prompt string) {
 
 	log.L().Infow("episode_start", "id", id, "prompt", prompt)
 
-	msg, err := m.graph.Invoke(ctx, prompt)
+	msg, err := m.agent.Generate(ctx, []*schema.Message{schema.UserMessage(prompt)})
 	if err != nil {
 		log.L().Errorw("episode_failed", "id", id, "err", err)
 		m.store.Update(id, func(ep *Episode) {
