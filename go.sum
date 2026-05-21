@@ -33,6 +33,8 @@ github.com/cloudwego/eino v0.9.0-alpha.25 h1:06Ndrs44GD5SDTkZvsrHsLDWuv0mU5hp0dd
 github.com/cloudwego/eino v0.9.0-alpha.25/go.mod h1:OBD1mrkfkt/pJa4rkg1P0VnaMeOVl7l8IAdEqY//3IQ=
 github.com/cloudwego/eino-ext/components/model/ark v0.1.66 h1:b3Opd+FX82XxjBSh3zq2cVtzEQ7FfZ5b/y9Lx+SxnII=
 github.com/cloudwego/eino-ext/components/model/ark v0.1.66/go.mod h1:E+9WaIMWnqKl8xZXYhZUiT5giCwfIfWh/zgCzLzGhFg=
+github.com/cloudwego/eino-ext/components/tool/duckduckgo v0.0.0-20260520075158-20432234c011 h1:Gc77vDSS+Qbz64K7gg2kCVmxOpsGf/P/QBQAjOSWPo0=
+github.com/cloudwego/eino-ext/components/tool/duckduckgo v0.0.0-20260520075158-20432234c011/go.mod h1:k44QvxAxLUCfPieyY3R5t3qLlqB6JoHrTel+pzE+fpI=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=

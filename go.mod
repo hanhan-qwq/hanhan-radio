@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/cloudwego/eino v0.9.0-alpha.25
 	github.com/cloudwego/eino-ext/components/model/ark v0.1.66
+	github.com/cloudwego/eino-ext/components/tool/duckduckgo v0.0.0-20260520075158-20432234c011
 	github.com/gin-contrib/cors v1.7.7
 	github.com/gin-gonic/gin v1.12.0
 	github.com/joho/godotenv v1.5.1
