@@ -4,12 +4,14 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/cloudwego/eino/compose"
+	"github.com/cloudwego/eino/schema"
 
 	"hanhan-radio/agentruntime/log"
 	"hanhan-radio/agentruntime/synthesizeaudio"
@@ -105,14 +107,14 @@ func (s *Store) Update(id string, fn func(*Episode)) {
 	s.mu.Unlock()
 }
 
-// Manager orchestrates episode creation and async graph execution.
+// Manager orchestrates episode creation and async agent execution.
 type Manager struct {
-	graph compose.Runnable[string, *synthesizeaudio.SynthesizeOutput]
+	graph compose.Runnable[string, *schema.Message]
 	store *Store
 }
 
-// New creates a Manager with the given graph and store.
-func New(g compose.Runnable[string, *synthesizeaudio.SynthesizeOutput], s *Store) *Manager {
+// New creates a Manager with the given agent graph and store.
+func New(g compose.Runnable[string, *schema.Message], s *Store) *Manager {
 	return &Manager{graph: g, store: s}
 }
 
@@ -149,7 +151,7 @@ func (m *Manager) execute(id, prompt string) {
 
 	log.L().Infow("episode_start", "id", id, "prompt", prompt)
 
-	output, err := m.graph.Invoke(ctx, prompt)
+	msg, err := m.graph.Invoke(ctx, prompt)
 	if err != nil {
 		log.L().Errorw("episode_failed", "id", id, "err", err)
 		m.store.Update(id, func(ep *Episode) {
@@ -159,21 +161,35 @@ func (m *Manager) execute(id, prompt string) {
 		return
 	}
 
-	log.L().Infow("episode_done", "id", id, "audio", output.AudioFile, "duration", output.Duration)
+	log.L().Debugw("agent_response", "id", id, "content", msg.Content)
 
-	items := make([]SongSegmentItem, len(output.Segments))
-	for i, s := range output.Segments {
-		items[i] = SongSegmentItem{
-			Title:  s.Title,
-			Artist: s.Artist,
-			Segue:  s.Segue,
-		}
+	var items []SongSegmentItem
+	if err := json.Unmarshal([]byte(msg.Content), &items); err != nil {
+		log.L().Errorw("parse_agent_output", "id", id, "err", err, "content", msg.Content)
+		m.store.Update(id, func(ep *Episode) {
+			ep.Status = StatusFailed
+			ep.Error = fmt.Sprintf("parse agent output: %v", err)
+		})
+		return
 	}
+
+	audioPath := filepath.Join(outDir, "final.mp3")
+	dur, err := synthesizeaudio.ProbeDuration(ctx, audioPath)
+	if err != nil {
+		log.L().Errorw("probe_duration", "id", id, "err", err)
+		m.store.Update(id, func(ep *Episode) {
+			ep.Status = StatusFailed
+			ep.Error = fmt.Sprintf("probe audio duration: %v", err)
+		})
+		return
+	}
+
+	log.L().Infow("episode_done", "id", id, "audio", audioPath, "duration", dur, "segments", len(items))
 
 	m.store.Update(id, func(ep *Episode) {
 		ep.Status = StatusDone
 		ep.AudioURL = "/static/" + id + "/final.mp3"
-		ep.Duration = output.Duration
+		ep.Duration = dur
 		ep.Segments = items
 	})
 }

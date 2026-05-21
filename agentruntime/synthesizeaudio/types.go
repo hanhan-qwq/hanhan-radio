@@ -24,10 +24,10 @@ type SongSegment struct {
 	FilePath string `json:"file_path"` // local audio file path, from select_song
 }
 
-// SynthesizeInput is the input for the synthesize_audio node.
+// SynthesizeInput is the input for the synthesize_audio tool.
+// OutputDir is intentionally not exposed to the LLM — it is read from ctx.
 type SynthesizeInput struct {
-	Segments  []SongSegment `json:"segments"`
-	OutputDir string        `json:"output_dir"`
+	Segments []SongSegment `json:"segments" jsonschema_description:"需要合成的片段数组，每个包含 title, artist, segue, file_path"`
 }
 
 // synthesizeAudioReady is the intermediate state between tts and concat nodes.
