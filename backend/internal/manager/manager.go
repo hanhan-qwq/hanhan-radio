@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,7 +28,7 @@ const (
 	StatusFailed     EpisodeStatus = "failed"
 )
 
-// Episode is a generated radio episode.
+// Episode is a generated radio episode or chat response.
 type Episode struct {
 	ID        string            `json:"id"`
 	Prompt    string            `json:"prompt"`
@@ -36,6 +37,7 @@ type Episode struct {
 	AudioURL  string            `json:"audio_url,omitempty"`
 	Duration  int               `json:"duration,omitempty"`
 	Segments  []SongSegmentItem `json:"segments,omitempty"`
+	Message   string            `json:"message,omitempty"` // chat text when not a music request
 	Error     string            `json:"error,omitempty"`
 }
 
@@ -163,9 +165,18 @@ func (m *Manager) execute(id, prompt string) {
 
 	log.L().Debugw("agent_response", "id", id, "content", msg.Content)
 
+	trimmed := strings.TrimSpace(msg.Content)
+	if strings.HasPrefix(trimmed, "[") {
+		m.handleMusicResponse(ctx, id, outDir, msg.Content)
+	} else {
+		m.handleChatResponse(id, msg.Content)
+	}
+}
+
+func (m *Manager) handleMusicResponse(ctx context.Context, id, outDir, content string) {
 	var items []SongSegmentItem
-	if err := json.Unmarshal([]byte(msg.Content), &items); err != nil {
-		log.L().Errorw("parse_agent_output", "id", id, "err", err, "content", msg.Content)
+	if err := json.Unmarshal([]byte(content), &items); err != nil {
+		log.L().Errorw("parse_agent_output", "id", id, "err", err, "content", content)
 		m.store.Update(id, func(ep *Episode) {
 			ep.Status = StatusFailed
 			ep.Error = fmt.Sprintf("parse agent output: %v", err)
@@ -191,6 +202,15 @@ func (m *Manager) execute(id, prompt string) {
 		ep.AudioURL = "/static/" + id + "/final.mp3"
 		ep.Duration = dur
 		ep.Segments = items
+	})
+}
+
+func (m *Manager) handleChatResponse(id, content string) {
+	log.L().Infow("chat_done", "id", id, "content_len", len(content))
+
+	m.store.Update(id, func(ep *Episode) {
+		ep.Status = StatusDone
+		ep.Message = content
 	})
 }
 

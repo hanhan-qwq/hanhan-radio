@@ -12,6 +12,7 @@ export interface Episode {
   audio_url?: string;
   duration?: number;
   segments?: SongSegment[];
+  message?: string;
   error?: string;
 }
 

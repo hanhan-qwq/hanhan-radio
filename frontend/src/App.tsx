@@ -31,12 +31,18 @@ export default function App() {
         if (msg.episodeId !== currentEpisodeId || msg.role !== "assistant") return msg;
 
         if (polledEpisode.status === "done") {
-          const segue = polledEpisode.segments?.[0]?.segue || "";
-          const title = polledEpisode.segments?.[0]?.title || "";
-          const artist = polledEpisode.segments?.[0]?.artist || "";
+          let text: string;
+          if (polledEpisode.message) {
+            text = polledEpisode.message;
+          } else {
+            const segue = polledEpisode.segments?.[0]?.segue || "";
+            const title = polledEpisode.segments?.[0]?.title || "";
+            const artist = polledEpisode.segments?.[0]?.artist || "";
+            text = segue || `为您播放 ${title} - ${artist}`;
+          }
           return {
             ...msg,
-            text: segue || `为您播放 ${title} - ${artist}`,
+            text,
             episodeStatus: "done",
           };
         }
@@ -130,9 +136,15 @@ export default function App() {
         const alreadyHas = prev.some((m) => m.episodeId === ep.id && m.role === "user");
         if (alreadyHas) return prev;
 
-        const segue = ep.segments?.[0]?.segue || "";
-        const title = ep.segments?.[0]?.title || "";
-        const artist = ep.segments?.[0]?.artist || "";
+        let text: string;
+        if (ep.message) {
+          text = ep.message;
+        } else {
+          const segue = ep.segments?.[0]?.segue || "";
+          const title = ep.segments?.[0]?.title || "";
+          const artist = ep.segments?.[0]?.artist || "";
+          text = segue || `${title} - ${artist}`;
+        }
 
         return [
           ...prev,
@@ -140,7 +152,7 @@ export default function App() {
           {
             id: nextId(),
             role: "assistant",
-            text: segue || `${title} - ${artist}`,
+            text,
             episodeId: ep.id,
             episodeStatus: ep.status,
           },
