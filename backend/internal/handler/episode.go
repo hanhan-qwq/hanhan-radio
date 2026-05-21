@@ -31,7 +31,8 @@ func New(mgr *manager.Manager, store *manager.Store) *EpisodeHandler {
 // @Router       /episodes [post]
 func (h *EpisodeHandler) CreateEpisode(c *gin.Context) {
 	var req struct {
-		Prompt string `json:"prompt"`
+		Prompt    string `json:"prompt"`
+			SessionID string `json:"session_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || req.Prompt == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -42,7 +43,7 @@ func (h *EpisodeHandler) CreateEpisode(c *gin.Context) {
 		return
 	}
 
-	ep, err := h.mgr.Submit(c.Request.Context(), req.Prompt)
+	ep, err := h.mgr.Submit(c.Request.Context(), req.Prompt, req.SessionID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    50000,

@@ -17,6 +17,13 @@ import (
 
 const instruction = `你是 Hanhan Radio 的 AI 电台 DJ，一个温暖亲切的音乐陪伴角色。
 
+{UserPreferences}
+
+## 近期播放（请尽量避开以下歌曲，除非用户明确要求重播）
+{RecentPlays}
+
+{ConversationContext}
+
 ## 判断用户意图
 
 首先判断用户输入属于哪种类型：
@@ -73,7 +80,8 @@ func NewAgent(ctx context.Context, cm model.BaseChatModel, tools ...tool.BaseToo
 }
 
 // NewAgentWithDefaults creates the agent with default model, select_song, web search, and synthesize_audio tools.
-func NewAgentWithDefaults(ctx context.Context) (*adk.ChatModelAgent, error) {
+// Extra tools (e.g. recall_memory) are appended after the standard set.
+func NewAgentWithDefaults(ctx context.Context, extraTools ...tool.BaseTool) (*adk.ChatModelAgent, error) {
 	cm, err := NewModel(ctx)
 	if err != nil {
 		return nil, err
@@ -98,5 +106,8 @@ func NewAgentWithDefaults(ctx context.Context) (*adk.ChatModelAgent, error) {
 		return nil, err
 	}
 
-	return NewAgent(ctx, cm, songTool, safeTool(searchTool), audioTool)
+	tools := []tool.BaseTool{songTool, safeTool(searchTool), audioTool}
+	tools = append(tools, extraTools...)
+
+	return NewAgent(ctx, cm, tools...)
 }

@@ -13,6 +13,7 @@ import (
 	pkglog "hanhan-radio/agentruntime/log"
 	"hanhan-radio/backend/internal/handler"
 	"hanhan-radio/backend/internal/manager"
+	"hanhan-radio/backend/internal/memory"
 	"hanhan-radio/backend/internal/router"
 )
 
@@ -34,7 +35,16 @@ func main() {
 
 	ctx := context.Background()
 
-	agent, err := agentruntime.NewAgentWithDefaults(ctx)
+	// Initialize SQLite memory store.
+	memStore, err := memory.Open("data/hanhan_memory.db")
+	if err != nil {
+		log.Fatalf("open memory store: %v", err)
+	}
+
+	// Create recall_memory tool from the SQLite store.
+	recallTool := memory.NewRecallMemoryTool(memStore)
+
+	agent, err := agentruntime.NewAgentWithDefaults(ctx, recallTool)
 	if err != nil {
 		log.Fatalf("create agent: %v", err)
 	}
@@ -42,7 +52,7 @@ func main() {
 	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent})
 
 	store := manager.NewStore()
-	epManager := manager.New(runner, store)
+	epManager := manager.New(runner, store, memStore)
 	h := handler.New(epManager, store)
 	r := router.New(h)
 

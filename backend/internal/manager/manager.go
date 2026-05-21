@@ -15,6 +15,7 @@ import (
 
 	"hanhan-radio/agentruntime/log"
 	"hanhan-radio/agentruntime/synthesizeaudio"
+	"hanhan-radio/backend/internal/memory"
 )
 
 // EpisodeStatus is the lifecycle state of an episode.
@@ -110,17 +111,18 @@ func (s *Store) Update(id string, fn func(*Episode)) {
 
 // Manager orchestrates episode creation and async agent execution.
 type Manager struct {
-	runner *adk.Runner
-	store  *Store
+	runner      *adk.Runner
+	store       *Store
+	memoryStore *memory.Store
 }
 
-// New creates a Manager with the given runner and store.
-func New(r *adk.Runner, s *Store) *Manager {
-	return &Manager{runner: r, store: s}
+// New creates a Manager with the given runner, store, and memory store.
+func New(r *adk.Runner, s *Store, ms *memory.Store) *Manager {
+	return &Manager{runner: r, store: s, memoryStore: ms}
 }
 
 // Submit creates an episode and starts async execution.
-func (m *Manager) Submit(ctx context.Context, prompt string) (*Episode, error) {
+func (m *Manager) Submit(ctx context.Context, prompt, sessionID string) (*Episode, error) {
 	id, err := genID()
 	if err != nil {
 		return nil, fmt.Errorf("generate id: %w", err)
@@ -134,17 +136,23 @@ func (m *Manager) Submit(ctx context.Context, prompt string) (*Episode, error) {
 	}
 	m.store.Create(ep)
 
-	go m.execute(id, prompt)
+	go m.execute(id, prompt, sessionID)
 
 	return ep, nil
 }
 
-func (m *Manager) execute(id, prompt string) {
+func (m *Manager) execute(id, prompt, sessionID string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
 	outDir := filepath.Join(baseDir, id)
 	ctx = synthesizeaudio.WithOutputDir(ctx, outDir)
+
+	// Pre-process: load memory and inject into agent instruction.
+	if m.memoryStore != nil {
+		values := m.memoryStore.Preprocess(sessionID)
+		adk.AddSessionValues(ctx, values)
+	}
 
 	m.store.Update(id, func(ep *Episode) {
 		ep.Status = StatusProcessing
@@ -164,6 +172,11 @@ func (m *Manager) execute(id, prompt string) {
 	}
 
 	log.L().Debugw("agent_response", "id", id, "content", content)
+
+	// Post-process: record play history and update preferences.
+	if m.memoryStore != nil {
+		m.memoryStore.Postprocess(sessionID, prompt, content)
+	}
 
 	trimmed := strings.TrimSpace(content)
 	if strings.HasPrefix(trimmed, "[") {
