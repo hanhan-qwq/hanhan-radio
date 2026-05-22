@@ -179,16 +179,16 @@ func (m *Manager) execute(id, prompt, sessionID string) {
 	// Post-process: record play history and update preferences.
 	if m.memoryStore != nil {
 		m.memoryStore.Postprocess(sessionID, prompt, content)
-	}
-
-	trimmed := strings.TrimSpace(content)
-	if strings.HasPrefix(trimmed, "[") {
-		// Music response — extract long-term preference facts via LLM.
-		if m.memoryStore != nil && m.model != nil {
+		// LLM-based fact extraction (music + chat both trigger).
+		if m.model != nil {
 			if err := m.memoryStore.ExtractFacts(ctx, m.model, prompt, content); err != nil {
 				log.L().Warnw("extract_facts_failed", "id", id, "err", err)
 			}
 		}
+	}
+
+	trimmed := strings.TrimSpace(content)
+	if strings.HasPrefix(trimmed, "[") {
 		m.handleMusicResponse(ctx, id, outDir, content)
 	} else {
 		m.handleChatResponse(id, content)

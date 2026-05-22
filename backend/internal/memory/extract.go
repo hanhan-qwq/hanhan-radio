@@ -15,21 +15,26 @@ const extractPrompt = `You are a music preference extractor. Analyze the convers
 ## Existing Facts (do NOT repeat these)
 %s
 
+## Last Played Song
+%s
+
 ## Current Conversation
 User said: %s
-DJ played: %s
+DJ said: %s
 
 ## Extraction Rules
 1. Categories: artist_opinion (likes a specific artist), music_taste (genre/style preference), mood_pattern (mood→music mapping), listening_habit (repeated behavior).
-2. CRITICAL — only extract artist_opinion or music_taste if the user EXPLICITLY mentioned the artist/genre in their request. If the DJ chose the song based on mood/context but the user didn't name it, DO NOT extract artist_opinion — only extract mood_pattern.
-3. Assign confidence:
-   - 0.7-0.9: user explicitly named artist/genre, or pattern confirmed across multiple conversations
-   - 0.4-0.6: user described a mood/scenario, the mapping is a reasonable inference
-   - 0.2-0.3: weak first-time signal, could be temporary
-4. If the user shows dissatisfaction (skip, change, "not this"), extract a NEGATIVE fact with low confidence.
-5. Each fact must be self-contained, under 30 words, in Chinese.
-6. Do NOT repeat facts already covered by existing facts.
-7. Return empty facts array if nothing new to extract. Only output valid JSON, no other text.
+2. User explicitly named an artist/genre/song in this conversation → extract artist_opinion or music_taste with confidence 0.7+.
+3. User described a mood/scenario, DJ chose a song → extract only mood_pattern (0.4-0.6), NOT artist_opinion about the DJ's choice.
+4. User gave positive/negative feedback ("这首不错""换一首""不太喜欢这首"):
+   - Compare with Last Played Song to identify the target artist/genre.
+   - Positive → bump confidence of existing matching fact, or add new fact (0.5-0.6).
+   - Negative → extract a negative fact with low confidence (0.2-0.3).
+5. User said "再来一首" without naming anything → NO extraction, return empty array. This just reinforces what was already played — no new signal.
+6. User expressed music preference in casual chat ("我好喜欢周杰伦") → extract as if they named it explicitly (0.7+).
+7. Each fact self-contained, under 30 words, in Chinese.
+8. Do NOT repeat facts already in existing facts.
+9. Return empty array if nothing new. Only output valid JSON, no other text.
 
 ## Output Format
 {"facts": [{"category": "artist_opinion|music_taste|mood_pattern|listening_habit", "content": "...", "confidence": 0.X}]}`
@@ -63,7 +68,15 @@ func (s *Store) ExtractFacts(ctx context.Context, cm model.BaseChatModel, userPr
 		existingStr = strings.Join(lines, "\n")
 	}
 
-	// Build song summary from agent output.
+	// Get last played song for reference resolution ("这首不错" etc.).
+	lastPlayedStr := "none"
+	plays, err := s.RecentPlays()
+	if err == nil && len(plays) > 0 {
+		last := plays[0]
+		lastPlayedStr = fmt.Sprintf("%s - %s", last.SongArtist, last.SongTitle)
+	}
+
+	// Build DJ response summary.
 	songInfo := agentOutput
 	if strings.HasPrefix(strings.TrimSpace(agentOutput), "[") {
 		var items []SongItem
@@ -77,7 +90,7 @@ func (s *Store) ExtractFacts(ctx context.Context, cm model.BaseChatModel, userPr
 	}
 
 	userPromptSafe := truncate(userPrompt, 200)
-	userMsg := fmt.Sprintf(extractPrompt, existingStr, userPromptSafe, songInfo)
+	userMsg := fmt.Sprintf(extractPrompt, existingStr, lastPlayedStr, userPromptSafe, songInfo)
 
 	messages := []*schema.Message{
 		schema.SystemMessage("You are a JSON-only music preference extractor. Always output valid JSON."),
