@@ -41,6 +41,7 @@ type MemoryFact struct {
 	Confidence float64 `gorm:"default:0.5"`
 	Source     string  `gorm:"default:''"`
 	CreatedAt  int64   `gorm:"autoCreateTime:milli"`
+	UpdatedAt  int64   `gorm:"autoUpdateTime:milli"`
 	ExpiredAt  int64   `gorm:"default:0;index:idx_fact_expired"` // 0 = active
 }
 

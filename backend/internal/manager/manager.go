@@ -184,6 +184,11 @@ func (m *Manager) execute(id, prompt, sessionID string) {
 			if err := m.memoryStore.ExtractFacts(ctx, m.model, prompt, content); err != nil {
 				log.L().Warnw("extract_facts_failed", "id", id, "err", err)
 			}
+				go func() {
+					if err := m.memoryStore.ConsolidateFacts(context.Background(), m.model); err != nil {
+						log.L().Warnw("consolidate_facts_failed", "id", id, "err", err)
+					}
+				}()
 		}
 	}
 

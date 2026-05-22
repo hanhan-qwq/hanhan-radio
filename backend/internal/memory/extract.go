@@ -125,6 +125,9 @@ func (s *Store) ExtractFacts(ctx context.Context, cm model.BaseChatModel, userPr
 		if f.Confidence <= 0 {
 			f.Confidence = 0.3
 		}
+		if !validateFact(cat, f.Content, userPrompt, songInfo) {
+			continue
+		}
 		_ = s.AddFact(cat, f.Content, f.Confidence, "")
 	}
 
@@ -137,4 +140,29 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return string(runes[:n]) + "..."
+}
+
+// validateFact rejects facts that the LLM hallucinated — e.g. artist_opinion about an
+// artist the user never mentioned. Checks both user prompt and agent output for context.
+// mood_pattern and listening_habit are always accepted since they describe inferred patterns.
+func validateFact(category, content, userPrompt, agentContext string) bool {
+	switch category {
+	case catArtistOpinion:
+		return contentOverlapsPrompt(content, userPrompt) || contentOverlapsPrompt(content, agentContext)
+	case catMusicTaste:
+		return contentOverlapsPrompt(content, userPrompt) || contentOverlapsPrompt(content, agentContext)
+	default:
+		return true
+	}
+}
+
+// contentOverlapsPrompt checks whether any >=2-rune word from fact content appears in the text.
+func contentOverlapsPrompt(factContent, text string) bool {
+	words := extractWords(factContent)
+	for w := range words {
+		if strings.Contains(text, w) {
+			return true
+		}
+	}
+	return false
 }

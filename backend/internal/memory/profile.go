@@ -16,7 +16,14 @@ const (
 )
 
 // AddFact inserts a new fact or merges with a similar existing one.
+// If the new fact has very low confidence (<0.3), it's treated as a negative signal
+// and penalizes matching positive facts instead of merging.
 func (s *Store) AddFact(category, content string, confidence float64, source string) error {
+	// Negative signal: penalize matching positive facts.
+	if confidence < 0.3 {
+		return s.penalizeMatchingFacts(category, content)
+	}
+
 	similar, err := s.findSimilarFact(category, content)
 	if err != nil {
 		return err
@@ -35,6 +42,31 @@ func (s *Store) AddFact(category, content string, confidence float64, source str
 		Confidence: confidence,
 		Source:     source,
 	}).Error
+}
+
+// penalizeMatchingFacts finds positive facts in the same category with keyword overlap
+// and reduces their confidence. Facts that drop below 0.3 are expired.
+func (s *Store) penalizeMatchingFacts(category, content string) error {
+	negWords := extractWords(content)
+
+	var candidates []MemoryFact
+	if err := s.DB.Where("category = ? AND expired_at = 0 AND confidence > 0.3", category).
+		Find(&candidates).Error; err != nil {
+		return err
+	}
+
+	for i := range candidates {
+		if wordOverlap(negWords, candidates[i].Content) > 0 {
+			candidates[i].Confidence = max(candidates[i].Confidence-0.2, 0.1)
+			if candidates[i].Confidence < 0.3 {
+				candidates[i].ExpiredAt = time.Now().UnixMilli()
+			}
+			if err := s.DB.Save(&candidates[i]).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // findSimilarFact returns an active fact in the same category with overlapping keywords.
@@ -133,6 +165,16 @@ func (s *Store) RecordPreferences(artist, genre, language string) {
 	s.RecordGenrePlay(genre)
 }
 
+// decayFactor returns the time decay multiplier for a fact.
+// Confidence decays ~0.5% per day, bottoming at 30% of original.
+func (s *Store) decayFactor(f MemoryFact) float64 {
+	days := float64(time.Now().UnixMilli()-f.UpdatedAt) / 86400000.0
+	if days < 1 {
+		return 1.0
+	}
+	return max(0.3, 1.0-days*0.005)
+}
+
 // GetProfileSummary generates the L1 user profile text for prompt injection.
 func (s *Store) GetProfileSummary() string {
 	facts, err := s.GetActiveFacts()
@@ -165,7 +207,8 @@ func (s *Store) GetProfileSummary() string {
 		}
 		var items []string
 		for _, f := range top {
-			if f.Confidence >= 0.3 {
+			effective := f.Confidence * s.decayFactor(f)
+			if effective >= 0.3 {
 				items = append(items, f.Content)
 			}
 		}
