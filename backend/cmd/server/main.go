@@ -35,6 +35,12 @@ func main() {
 
 	ctx := context.Background()
 
+	// Create model (shared by agent and memory fact extraction).
+	cm, err := agentruntime.NewModel(ctx)
+	if err != nil {
+		log.Fatalf("create model: %v", err)
+	}
+
 	// Initialize SQLite memory store.
 	memStore, err := memory.Open("data/hanhan_memory.db")
 	if err != nil {
@@ -44,7 +50,7 @@ func main() {
 	// Create recall_memory tool from the SQLite store.
 	recallTool := memory.NewRecallMemoryTool(memStore)
 
-	agent, err := agentruntime.NewAgentWithDefaults(ctx, recallTool)
+	agent, err := agentruntime.NewAgentWithModel(ctx, cm, recallTool)
 	if err != nil {
 		log.Fatalf("create agent: %v", err)
 	}
@@ -52,7 +58,7 @@ func main() {
 	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent})
 
 	store := manager.NewStore()
-	epManager := manager.New(runner, store, memStore)
+	epManager := manager.New(runner, store, memStore, cm)
 	h := handler.New(epManager, store)
 	r := router.New(h)
 

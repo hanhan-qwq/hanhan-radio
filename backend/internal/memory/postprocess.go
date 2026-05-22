@@ -32,7 +32,6 @@ func (s *Store) Postprocess(sessionID, userPrompt, agentOutput string) {
 				UserPrompt: userPrompt,
 				SessionID:  sessionID,
 			})
-			s.RecordPreferences(item.Artist, "", "")
 		}
 
 		var names []string

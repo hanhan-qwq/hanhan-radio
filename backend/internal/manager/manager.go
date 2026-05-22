@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/adk"
+	"github.com/cloudwego/eino/components/model"
 
 	"hanhan-radio/agentruntime/log"
 	"hanhan-radio/agentruntime/synthesizeaudio"
@@ -114,11 +115,13 @@ type Manager struct {
 	runner      *adk.Runner
 	store       *Store
 	memoryStore *memory.Store
+	model       model.BaseChatModel // for LLM fact extraction
 }
 
-// New creates a Manager with the given runner, store, and memory store.
-func New(r *adk.Runner, s *Store, ms *memory.Store) *Manager {
-	return &Manager{runner: r, store: s, memoryStore: ms}
+// New creates a Manager with the given runner, store, memory store, and optional model.
+// model can be nil — fact extraction will be skipped.
+func New(r *adk.Runner, s *Store, ms *memory.Store, cm model.BaseChatModel) *Manager {
+	return &Manager{runner: r, store: s, memoryStore: ms, model: cm}
 }
 
 // Submit creates an episode and starts async execution.
@@ -176,6 +179,12 @@ func (m *Manager) execute(id, prompt, sessionID string) {
 	// Post-process: record play history and update preferences.
 	if m.memoryStore != nil {
 		m.memoryStore.Postprocess(sessionID, prompt, content)
+		// LLM-based fact extraction from the conversation.
+		if m.model != nil {
+			if err := m.memoryStore.ExtractFacts(ctx, m.model, prompt, content); err != nil {
+				log.L().Warnw("extract_facts_failed", "id", id, "err", err)
+			}
+		}
 	}
 
 	trimmed := strings.TrimSpace(content)

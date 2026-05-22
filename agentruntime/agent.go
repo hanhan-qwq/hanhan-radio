@@ -86,7 +86,12 @@ func NewAgentWithDefaults(ctx context.Context, extraTools ...tool.BaseTool) (*ad
 	if err != nil {
 		return nil, err
 	}
+	return NewAgentWithModel(ctx, cm, extraTools...)
+}
 
+// NewAgentWithModel is like NewAgentWithDefaults but uses a pre-created model.
+// This allows sharing the same model between agent and memory extraction.
+func NewAgentWithModel(ctx context.Context, cm model.BaseChatModel, extraTools ...tool.BaseTool) (*adk.ChatModelAgent, error) {
 	songTool, err := selectsong.NewTool(ctx, cm)
 	if err != nil {
 		return nil, err
