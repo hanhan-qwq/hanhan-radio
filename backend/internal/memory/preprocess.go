@@ -8,7 +8,7 @@ import (
 // Preprocess loads all memory data and assembles SessionValues for ADK injection.
 func (s *Store) Preprocess(sessionID string) map[string]any {
 	return map[string]any{
-		"UserPreferences":     s.GetPreferences(),
+		"UserProfile":         s.GetProfileSummary(),
 		"RecentPlays":         s.formatRecentPlays(),
 		"ConversationContext": s.formatConversationContext(sessionID),
 	}

@@ -8,153 +8,178 @@ import (
 	"time"
 )
 
-const decayFactor = 0.95
+const (
+	catArtistOpinion  = "artist_opinion"
+	catMusicTaste     = "music_taste"
+	catMoodPattern    = "mood_pattern"
+	catListeningHabit = "listening_habit"
+)
 
-// bumpScore increments a profile score by delta, capped to 1.0.
-func (s *Store) bumpScore(key string, delta float64) error {
-	var entry ProfileEntry
-	err := s.DB.First(&entry, "key = ?", key).Error
+// AddFact inserts a new fact or merges with a similar existing one.
+func (s *Store) AddFact(category, content string, confidence float64, source string) error {
+	similar, err := s.findSimilarFact(category, content)
 	if err != nil {
-		entry = ProfileEntry{Key: key, Value: 0}
-	}
-	entry.Value = math.Min(entry.Value+delta, 1.0)
-	return s.DB.Save(&entry).Error
-}
-
-// RecordPreferences bumps artist and genre scores from a play.
-func (s *Store) RecordPreferences(artist, genre, language string) {
-	if artist != "" {
-		_ = s.bumpScore("artist:"+artist, 0.1)
-	}
-	if genre != "" {
-		_ = s.bumpScore("genre:"+genre, 0.1)
-	}
-	if language != "" {
-		_ = s.bumpScore("lang:"+language, 0.1)
-	}
-}
-
-// ApplyDecay multiplies all profile values by the decay factor.
-// Should be called at most once per day.
-func (s *Store) ApplyDecay() error {
-	var entries []ProfileEntry
-	if err := s.DB.Find(&entries).Error; err != nil {
 		return err
 	}
-	for _, e := range entries {
-		e.Value = math.Max(e.Value*decayFactor, 0.01)
-		if err := s.DB.Save(&e).Error; err != nil {
-			return err
+	if similar != nil {
+		similar.Confidence = math.Min(similar.Confidence+confidence*0.3, 1.0)
+		if source != "" {
+			similar.Source = source
 		}
+		return s.DB.Save(similar).Error
 	}
-	return nil
+
+	return s.DB.Create(&MemoryFact{
+		Category:   category,
+		Content:    content,
+		Confidence: confidence,
+		Source:     source,
+	}).Error
 }
 
-// LastDecay returns the timestamp of the last decay operation.
-// Returns zero if never decayed.
-func (s *Store) LastDecay() int64 {
-	var entry ProfileEntry
-	err := s.DB.First(&entry, "key = ?", "_decay_ts").Error
-	if err != nil {
+// findSimilarFact returns an active fact in the same category with overlapping keywords.
+func (s *Store) findSimilarFact(category, content string) (*MemoryFact, error) {
+	var facts []MemoryFact
+	if err := s.DB.Where("category = ? AND expired_at = 0", category).Find(&facts).Error; err != nil {
+		return nil, err
+	}
+
+	words := extractWords(content)
+	for i := range facts {
+		if wordOverlap(words, facts[i].Content) > 0.5 {
+			return &facts[i], nil
+		}
+	}
+	return nil, nil
+}
+
+// delimiters that separate meaningful words in Chinese text.
+var delimReplacer = strings.NewReplacer(
+	"，", " ",
+	"。", " ",
+	"、", " ",
+	"的", " ",
+	"了", " ",
+	"是", " ",
+	"在", " ",
+	"很", " ",
+	"非常", " ",
+)
+
+func extractWords(s string) map[string]bool {
+	cleaned := delimReplacer.Replace(s)
+	words := make(map[string]bool)
+	for _, w := range strings.Fields(cleaned) {
+		if len([]rune(w)) >= 2 {
+			words[w] = true
+		}
+	}
+	return words
+}
+
+func wordOverlap(a map[string]bool, b string) float64 {
+	if len(a) == 0 {
 		return 0
 	}
-	return int64(entry.Value)
-}
-
-// SetLastDecay records the decay timestamp.
-func (s *Store) SetLastDecay(ts int64) {
-	entry := ProfileEntry{Key: "_decay_ts", Value: float64(ts)}
-	_ = s.DB.Save(&entry)
-}
-
-// MaybeDecay applies decay if at least 24 hours have passed since the last decay.
-func (s *Store) MaybeDecay() error {
-	last := s.LastDecay()
-	now := time.Now().UnixMilli()
-	if now-last > 24*3600*1000 {
-		if err := s.ApplyDecay(); err != nil {
-			return err
+	bWords := extractWords(b)
+	var overlap int
+	for w := range a {
+		if bWords[w] {
+			overlap++
 		}
-		s.SetLastDecay(now)
 	}
-	return nil
+	return float64(overlap) / float64(len(a))
 }
 
-// GetPreferences returns the profile as a human-readable prompt string.
-func (s *Store) GetPreferences() string {
-	_ = s.MaybeDecay()
+// ExpireFact marks a fact as expired.
+func (s *Store) ExpireFact(id uint) error {
+	return s.DB.Model(&MemoryFact{}).Where("id = ?", id).
+		Update("expired_at", time.Now().UnixMilli()).Error
+}
 
-	var entries []ProfileEntry
-	if err := s.DB.Where("key NOT LIKE ?", "_%").Find(&entries).Error; err != nil {
+// GetActiveFacts returns all non-expired facts, optionally filtered by category.
+func (s *Store) GetActiveFacts(categories ...string) ([]MemoryFact, error) {
+	q := s.DB.Where("expired_at = 0")
+	if len(categories) > 0 {
+		q = q.Where("category IN ?", categories)
+	}
+	var facts []MemoryFact
+	err := q.Order("confidence DESC").Find(&facts).Error
+	return facts, err
+}
+
+// RecordArtistPlay records a fact that the user likes a specific artist.
+func (s *Store) RecordArtistPlay(artist string) {
+	if artist == "" {
+		return
+	}
+	content := fmt.Sprintf("用户喜欢听%s的歌", artist)
+	_ = s.AddFact(catArtistOpinion, content, 0.3, "")
+}
+
+// RecordGenrePlay records a fact that the user likes a specific genre.
+func (s *Store) RecordGenrePlay(genre string) {
+	if genre == "" {
+		return
+	}
+	content := fmt.Sprintf("用户喜欢%s风格的音乐", genre)
+	_ = s.AddFact(catMusicTaste, content, 0.3, "")
+}
+
+// RecordPreferences records artist and genre preferences from a play.
+// Kept for backward compatibility — delegates to fact-based recording.
+func (s *Store) RecordPreferences(artist, genre, language string) {
+	s.RecordArtistPlay(artist)
+	s.RecordGenrePlay(genre)
+}
+
+// GetProfileSummary generates the L1 user profile text for prompt injection.
+func (s *Store) GetProfileSummary() string {
+	facts, err := s.GetActiveFacts()
+	if err != nil || len(facts) == 0 {
 		return ""
 	}
-	if len(entries) == 0 {
-		return ""
+
+	groups := map[string][]MemoryFact{}
+	for _, f := range facts {
+		groups[f.Category] = append(groups[f.Category], f)
 	}
 
-	artists := map[string]float64{}
-	genres := map[string]float64{}
-	langs := map[string]float64{}
-
-	for _, e := range entries {
-		switch {
-		case strings.HasPrefix(e.Key, "artist:"):
-			artists[e.Key[7:]] = e.Value
-		case strings.HasPrefix(e.Key, "genre:"):
-			genres[e.Key[6:]] = e.Value
-		case strings.HasPrefix(e.Key, "lang:"):
-			langs[e.Key[5:]] = e.Value
-		}
+	catNames := map[string]string{
+		catArtistOpinion:  "歌手偏好",
+		catMusicTaste:     "音乐口味",
+		catMoodPattern:    "心情模式",
+		catListeningHabit: "收听习惯",
 	}
 
 	var parts []string
-
-	if len(artists) > 0 {
-		top := topK(artists, 5)
-		names := make([]string, len(top))
-		for i, kv := range top {
-			names[i] = fmt.Sprintf("%s(%.0f%%)", kv.k, kv.v*100)
+	for _, cat := range []string{catArtistOpinion, catMusicTaste, catMoodPattern, catListeningHabit} {
+		fs := groups[cat]
+		if len(fs) == 0 {
+			continue
 		}
-		parts = append(parts, "爱听歌手："+strings.Join(names, "、"))
-	}
-
-	if len(genres) > 0 {
-		top := topK(genres, 5)
-		names := make([]string, len(top))
-		for i, kv := range top {
-			names[i] = fmt.Sprintf("%s(%.0f%%)", kv.k, kv.v*100)
+		sort.Slice(fs, func(i, j int) bool { return fs[i].Confidence > fs[j].Confidence })
+		top := fs
+		if len(top) > 5 {
+			top = top[:5]
 		}
-		parts = append(parts, "偏好风格："+strings.Join(names, "、"))
-	}
-
-	if len(langs) > 0 {
-		top := topK(langs, 2)
-		names := make([]string, len(top))
-		for i, kv := range top {
-			names[i] = fmt.Sprintf("%s(%.0f%%)", kv.k, kv.v*100)
+		var items []string
+		for _, f := range top {
+			if f.Confidence >= 0.3 {
+				items = append(items, f.Content)
+			}
 		}
-		parts = append(parts, "偏好语言："+strings.Join(names, "、"))
+		if len(items) > 0 {
+			name := catNames[cat]
+			if name == "" {
+				name = cat
+			}
+			parts = append(parts, name+"："+strings.Join(items, "；"))
+		}
 	}
 
 	if len(parts) == 0 {
 		return ""
 	}
-	return "【用户偏好记录】" + strings.Join(parts, "；") + "。选歌时请优先参考这些信息。"
-}
-
-type kv struct {
-	k string
-	v float64
-}
-
-func topK(m map[string]float64, k int) []kv {
-	var items []kv
-	for key, val := range m {
-		items = append(items, kv{key, val})
-	}
-	sort.Slice(items, func(i, j int) bool { return items[i].v > items[j].v })
-	if len(items) > k {
-		items = items[:k]
-	}
-	return items
+	return "【用户画像】" + strings.Join(parts, "。") + "。选歌时请优先参考这些信息。"
 }
