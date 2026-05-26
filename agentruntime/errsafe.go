@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -20,6 +21,9 @@ func (t *errSafeTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
 func (t *errSafeTool) InvokableRun(ctx context.Context, jsonArgs string, opts ...tool.Option) (string, error) {
 	result, err := t.inner.InvokableRun(ctx, jsonArgs, opts...)
 	if err != nil {
+		if _, ok := compose.IsInterruptRerunError(err); ok {
+			return "", err
+		}
 		info, _ := t.inner.Info(ctx)
 		name := "tool"
 		if info != nil {

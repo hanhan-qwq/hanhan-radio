@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/cloudwego/eino/components/tool"
+	ttool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 
 	"hanhan-radio/agentruntime/log"
@@ -14,12 +14,37 @@ import (
 )
 
 // NewTool creates an InvokableTool that synthesizes audio from segments.
-// It handles TTS generation and audio concatenation via ffmpeg.
-func NewTool(ttsClient *tts.Client, defaultOutputDir string) (tool.InvokableTool, error) {
+// Before synthesis it interrupts for user confirmation (HITL).
+// On resume: "confirm" → proceed, "skip" → prompt Agent to re-select, "cancel" → abort.
+func NewTool(ttsClient *tts.Client, defaultOutputDir string) (ttool.InvokableTool, error) {
 	return utils.InferTool[*SynthesizeInput, *SynthesizeOutput](
 		"synthesize_audio",
 		"将电台串词合成为语音，并与对应的音乐文件拼接成完整的电台音频。调用后返回音频文件路径和时长。",
 		func(ctx context.Context, in *SynthesizeInput) (*SynthesizeOutput, error) {
+			wasInterrupted, _, _ := ttool.GetInterruptState[any](ctx)
+			if wasInterrupted {
+				isTarget, hasData, action := ttool.GetResumeContext[string](ctx)
+				if !isTarget {
+					return nil, ttool.Interrupt(ctx, nil)
+				}
+				if !hasData || action == "" {
+					action = "confirm"
+				}
+				switch action {
+				case "confirm":
+					// proceed to synthesis
+				case "skip":
+					return nil, fmt.Errorf("SKIP_SONG: 用户想换一首歌，请调用 select_song 重新选歌")
+				case "cancel":
+					return nil, fmt.Errorf("CANCEL: 用户取消了电台合成")
+				}
+			} else {
+				if len(in.Segments) == 0 {
+					return nil, fmt.Errorf("no segments to synthesize")
+				}
+				return nil, ttool.Interrupt(ctx, ConfirmInfo{Segments: in.Segments})
+			}
+
 			if len(in.Segments) == 0 {
 				return nil, fmt.Errorf("no segments to synthesize")
 			}

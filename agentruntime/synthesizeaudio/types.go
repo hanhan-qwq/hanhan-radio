@@ -1,6 +1,9 @@
 package synthesizeaudio
 
-import "context"
+import (
+	"context"
+	"encoding/gob"
+)
 
 type ctxKeyOutputDir struct{}
 
@@ -43,4 +46,14 @@ type SynthesizeOutput struct {
 	AudioFile string        `json:"audio_file"`
 	Duration  int           `json:"duration"`
 	Segments  []SongSegment `json:"-"`
+}
+
+// ConfirmInfo is the user-facing interrupt payload shown during
+// the "confirm before synthesize" HITL step.
+type ConfirmInfo struct {
+	Segments []SongSegment `json:"segments"`
+}
+
+func init() {
+	gob.RegisterName("hanhan-synth-ConfirmInfo", &ConfirmInfo{})
 }
