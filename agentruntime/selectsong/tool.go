@@ -2,15 +2,18 @@ package selectsong
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/cloudwego/eino/components/model"
-	"github.com/cloudwego/eino/components/tool"
+	ttool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 )
 
 // NewTool creates an InvokableTool from the selectsong chain.
+// After selecting a song it interrupts for user confirmation (HITL).
+// On resume: "confirm" → return selected song, "skip" → prompt Agent to re-select.
 // rctx is optional — pass nil if no profile / recent-play context is available.
-func NewTool(ctx context.Context, cm model.BaseChatModel, searcher *Searcher, rctx *RerankContext) (tool.InvokableTool, error) {
+func NewTool(ctx context.Context, cm model.BaseChatModel, searcher *Searcher, rctx *RerankContext) (ttool.InvokableTool, error) {
 	chain, err := NewChain(ctx, cm, searcher, rctx)
 	if err != nil {
 		return nil, err
@@ -18,6 +21,33 @@ func NewTool(ctx context.Context, cm model.BaseChatModel, searcher *Searcher, rc
 
 	return utils.InferTool("select_song", "根据用户的心情、风格偏好从曲库中搜索并选择合适的歌曲。支持语义搜索，调用后返回歌曲的名称、歌手、音频路径等信息。",
 		func(ctx context.Context, input *SelectSongInput) (*SelectSongOutput, error) {
-			return chain.Invoke(ctx, input)
+			wasInterrupted, hasState, state := ttool.GetInterruptState[selectSongState](ctx)
+			if wasInterrupted && hasState {
+				isTarget, hasData, action := ttool.GetResumeContext[string](ctx)
+				if !isTarget {
+					return nil, ttool.Interrupt(ctx, nil)
+				}
+				if !hasData || action == "" {
+					action = "confirm"
+				}
+				if action == "skip" {
+					return nil, fmt.Errorf("SKIP_SONG: 用户想换一首歌，请重新搜索推荐")
+				}
+				return &state.Output, nil
+			}
+
+			output, err := chain.Invoke(ctx, input)
+			if err != nil {
+				return nil, err
+			}
+
+			return nil, ttool.StatefulInterrupt(ctx,
+				ConfirmSongInfo{
+					Title:  output.Title,
+					Artist: output.Artist,
+					Genre:  output.Genre,
+				},
+				selectSongState{Output: *output},
+			)
 		})
 }

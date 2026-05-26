@@ -1,6 +1,8 @@
 package selectsong
 
 import (
+	"encoding/gob"
+
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -98,4 +100,22 @@ type rerankInput struct {
 	Input      *SelectSongInput
 	Candidates []SearchCandidate
 	Messages   []*schema.Message
+}
+
+// ConfirmSongInfo is the user-facing interrupt payload shown after song selection.
+type ConfirmSongInfo struct {
+	Title    string `json:"title"`
+	Artist   string `json:"artist"`
+	Genre    string `json:"genre,omitempty"`
+	Language string `json:"language,omitempty"`
+}
+
+// selectSongState is the tool's internal state saved in checkpoint during interrupt.
+type selectSongState struct {
+	Output SelectSongOutput
+}
+
+func init() {
+	gob.RegisterName("hanhan-sel-selectSongState", &selectSongState{})
+	gob.RegisterName("hanhan-sel-ConfirmSongInfo", &ConfirmSongInfo{})
 }

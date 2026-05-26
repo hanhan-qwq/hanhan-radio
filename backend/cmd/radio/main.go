@@ -17,6 +17,7 @@ import (
 
 	"hanhan-radio/agentruntime"
 	pkglog "hanhan-radio/agentruntime/log"
+	"hanhan-radio/agentruntime/selectsong"
 	"hanhan-radio/agentruntime/synthesizeaudio"
 	"hanhan-radio/backend/internal/memory"
 	"hanhan-radio/backend/internal/store"
@@ -120,7 +121,7 @@ func processQuery(runner *adk.Runner, sessionID, input string) (string, error) {
 	iter := runner.Query(context.Background(), input, adk.WithCheckPointID(sessionID))
 
 	for {
-		content, interrupted, interruptID, cInfo, err := drainEvents(iter)
+		content, interrupted, interruptID, interruptInfo, err := drainEvents(iter)
 		if err != nil {
 			return "", err
 		}
@@ -128,8 +129,7 @@ func processQuery(runner *adk.Runner, sessionID, input string) (string, error) {
 			return content, nil
 		}
 
-		// Show the interrupt info and ask user
-		showConfirm(cInfo)
+		showConfirm(interruptInfo)
 
 		action := promptAction()
 		fmt.Printf("⏳ 处理中...\n")
@@ -151,35 +151,22 @@ func drainEvents(iter *adk.AsyncIterator[*adk.AgentEvent]) (
 	content string,
 	interrupted bool,
 	interruptID string,
-	interruptInfo synthesizeaudio.ConfirmInfo,
+	interruptInfo any,
 	err error,
 ) {
 	for {
 		event, ok := iter.Next()
 		if !ok {
-			return content, false, "", interruptInfo, nil
+			return content, false, "", nil, nil
 		}
 		if event.Err != nil {
-			return "", false, "", interruptInfo, event.Err
+			return "", false, "", nil, event.Err
 		}
 
 		if event.Action != nil && event.Action.Interrupted != nil {
 			ctxs := event.Action.Interrupted.InterruptContexts
 			if len(ctxs) > 0 {
-				id := ctxs[0].ID
-				var info synthesizeaudio.ConfirmInfo
-				if ctxs[0].Info != nil {
-					// The info is the confirmInfo we passed to tool.Interrupt.
-					// It may arrive as the original struct or as a map after serialization.
-					switch v := ctxs[0].Info.(type) {
-					case synthesizeaudio.ConfirmInfo:
-						info = v
-					default:
-						// Fallback: try to interpret as a generic map or string.
-						info.Segments = nil
-					}
-				}
-				return content, true, id, info, nil
+				return content, true, ctxs[0].ID, ctxs[0].Info, nil
 			}
 		}
 
@@ -192,27 +179,36 @@ func drainEvents(iter *adk.AsyncIterator[*adk.AgentEvent]) (
 	}
 }
 
-func showConfirm(info synthesizeaudio.ConfirmInfo) {
+func showConfirm(info any) {
 	fmt.Println()
-	fmt.Println("🎧 即将合成以下歌曲：")
-	fmt.Println()
-	if len(info.Segments) > 0 {
-		for i, seg := range info.Segments {
-			fmt.Printf("  %d. %s - %s\n", i+1, seg.Title, seg.Artist)
-			if seg.Segue != "" {
-				// Truncate long segue for display.
-				preview := seg.Segue
-				if len([]rune(preview)) > 80 {
-					preview = string([]rune(preview)[:80]) + "..."
+	switch v := info.(type) {
+	case selectsong.ConfirmSongInfo:
+		fmt.Println("🎵 为你推荐这首歌：")
+		fmt.Println()
+		fmt.Printf("  %s - %s\n", v.Title, v.Artist)
+		if v.Genre != "" {
+			fmt.Printf("  风格: %s\n", v.Genre)
+		}
+	case synthesizeaudio.ConfirmInfo:
+		fmt.Println("🎧 即将合成以下歌曲：")
+		fmt.Println()
+		if len(v.Segments) > 0 {
+			for i, seg := range v.Segments {
+				fmt.Printf("  %d. %s - %s\n", i+1, seg.Title, seg.Artist)
+				if seg.Segue != "" {
+					preview := seg.Segue
+					if len([]rune(preview)) > 80 {
+						preview = string([]rune(preview)[:80]) + "..."
+					}
+					fmt.Printf("     %s\n", preview)
 				}
-				fmt.Printf("     %s\n", preview)
 			}
 		}
-	} else {
-		fmt.Println("  (无法显示歌曲详情)")
+	default:
+		fmt.Println("⏸  等待确认...")
 	}
 	fmt.Println()
-	fmt.Println("  [c] 确认合成  [s] 跳过换一首  [x] 取消")
+	fmt.Println("  [c] 确认  [s] 跳过换一个")
 }
 
 func promptAction() string {
@@ -220,7 +216,7 @@ func promptAction() string {
 	for {
 		fmt.Print("  选择 > ")
 		if !scanner.Scan() {
-			return "cancel"
+			return "confirm"
 		}
 		choice := strings.TrimSpace(strings.ToLower(scanner.Text()))
 		switch choice {
@@ -228,10 +224,8 @@ func promptAction() string {
 			return "confirm"
 		case "s":
 			return "skip"
-		case "x":
-			return "cancel"
 		default:
-			fmt.Println("  请输入 c (确认) / s (跳过) / x (取消)")
+			fmt.Println("  请输入 c (确认) / s (跳过)")
 		}
 	}
 }
