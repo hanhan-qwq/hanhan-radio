@@ -4,14 +4,15 @@ import (
 	"context"
 	"os"
 
-	"github.com/cloudwego/eino-ext/components/model/ark"
+	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
 )
 
-// NewModel creates an Ark ChatModel from environment variables.
+// NewModel creates an OpenAI-compatible ChatModel from environment variables.
 func NewModel(ctx context.Context) (model.ToolCallingChatModel, error) {
-	return ark.NewChatModel(ctx, &ark.ChatModelConfig{
-		APIKey: os.Getenv("ARK_API_KEY"),
-		Model:  os.Getenv("ARK_MODEL"),
+	return openai.NewChatModel(ctx, &openai.ChatModelConfig{
+		APIKey:  os.Getenv("OPENAI_API_KEY"),
+		BaseURL: os.Getenv("OPENAI_BASE_URL"),
+		Model:   os.Getenv("OPENAI_MODEL"),
 	})
 }

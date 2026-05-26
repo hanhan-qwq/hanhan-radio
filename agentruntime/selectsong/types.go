@@ -110,12 +110,6 @@ type ConfirmSongInfo struct {
 	Language string `json:"language,omitempty"`
 }
 
-// selectSongState is the tool's internal state saved in checkpoint during interrupt.
-type selectSongState struct {
-	Output SelectSongOutput
-}
-
 func init() {
-	gob.RegisterName("hanhan-sel-selectSongState", &selectSongState{})
 	gob.RegisterName("hanhan-sel-ConfirmSongInfo", &ConfirmSongInfo{})
 }
