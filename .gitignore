@@ -1,6 +1,8 @@
 .env
 data/
 /radio
+/server
+/bin/
 /.docs
 .claude
 /music

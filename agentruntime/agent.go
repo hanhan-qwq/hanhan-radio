@@ -2,6 +2,7 @@ package agentruntime
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	duckduckgo "github.com/cloudwego/eino-ext/components/tool/duckduckgo"
@@ -92,7 +93,27 @@ func NewAgentWithDefaults(ctx context.Context, extraTools ...tool.BaseTool) (*ad
 // NewAgentWithModel is like NewAgentWithDefaults but uses a pre-created model.
 // This allows sharing the same model between agent and memory extraction.
 func NewAgentWithModel(ctx context.Context, cm model.BaseChatModel, extraTools ...tool.BaseTool) (*adk.ChatModelAgent, error) {
-	songTool, err := selectsong.NewTool(ctx, cm)
+	// Embedding endpoint: read from env, fall back to same endpoint as chat model.
+	embeddingEndpoint := os.Getenv("ARK_EMBEDDING_MODEL")
+	if embeddingEndpoint == "" {
+		embeddingEndpoint = os.Getenv("ARK_MODEL") // fallback
+	}
+
+	embedder, err := selectsong.NewEmbedder(embeddingEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("create embedder: %w", err)
+	}
+
+	indexStore, err := selectsong.OpenIndexStore("data/song_index.db")
+	if err != nil {
+		return nil, fmt.Errorf("open index store: %w", err)
+	}
+
+	searcher := selectsong.NewSearcher(indexStore, embedder)
+
+	// TODO: wire up memory to populate RerankContext per-request.
+	var rctx *selectsong.RerankContext
+	songTool, err := selectsong.NewTool(ctx, cm, searcher, rctx)
 	if err != nil {
 		return nil, err
 	}
