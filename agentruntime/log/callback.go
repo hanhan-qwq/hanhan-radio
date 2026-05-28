@@ -2,6 +2,7 @@ package log
 
 import (
 	"context"
+	"strings"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/schema"
@@ -81,10 +82,24 @@ func onEnd(ctx context.Context, info *callbacks.RunInfo, output callbacks.Callba
 }
 
 func onError(ctx context.Context, info *callbacks.RunInfo, err error) context.Context {
+	// Interrupts are normal HITL flow control, not real errors.
+	// The framework uses errors to propagate them — filter them out.
+	if isInterrupt(err) {
+		return ctx
+	}
 	if info == nil {
 		sugared.Errorw("error", "err", err)
 		return ctx
 	}
 	sugared.Errorw("error", "node", info.Name, "err", err)
 	return ctx
+}
+
+func isInterrupt(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "interrupt signal") ||
+		strings.Contains(msg, "interrupt happened")
 }

@@ -20,6 +20,13 @@ func init() {
 		cfg = zap.NewDevelopmentConfig()
 		cfg.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
 		cfg.EncoderConfig.EncodeTime = zapcore.TimeEncoderOfLayout("15:04:05")
+		// CLI tool — write logs to file, keep terminal clean.
+		logFile := os.Getenv("LOG_FILE")
+		if logFile == "" {
+			logFile = "data/hanhan.log"
+		}
+		cfg.OutputPaths = []string{logFile}
+		cfg.ErrorOutputPaths = []string{logFile}
 	}
 
 	switch level {

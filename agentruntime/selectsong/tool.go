@@ -27,11 +27,11 @@ func NewTool(ctx context.Context, cm model.BaseChatModel, searcher *Searcher, rc
 		func(ctx context.Context, input *SelectSongInput) (*SelectSongOutput, error) {
 			wasInterrupted, _, _ := ttool.GetInterruptState[any](ctx)
 			if wasInterrupted {
-				isTarget, hasData, action := ttool.GetResumeContext[string](ctx)
-				if !isTarget {
-					// Another component is the resume target — re-interrupt to preserve our state.
-					return nil, ttool.Interrupt(ctx, nil)
-				}
+				// Closure already holds the selected song — we don't need
+				// framework checkpoint state. The resume context may not
+				// address us directly (call-ID suffix changes each invocation)
+				// but we're the only HITL tool, so any resume is for us.
+				_, hasData, action := ttool.GetResumeContext[string](ctx)
 				if !hasData || action == "" {
 					action = "confirm"
 				}
